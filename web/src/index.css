@@ -1,0 +1,303 @@
+@import 'tailwindcss';
+
+/* Marina's palette is harbour water at night: deep blue-greens rather than
+   neutral charcoal, with a lit-buoy aqua for anything that's alive and a lantern
+   amber reserved exclusively for the moment a service first appears. Every text
+   colour here clears 4.5:1 on its intended background — nothing is dimmed to
+   the point of being hard to read. */
+@theme {
+  --color-harbor-975: #04121a;
+  --color-harbor-950: #05161f;
+  --color-harbor-900: #071a24;
+  --color-harbor-850: #0a2230;
+  --color-harbor-800: #0e2b3a;
+  --color-harbor-700: #143c4f;
+  --color-harbor-600: #1d5570;
+  --color-harbor-500: #2a7089;
+
+  --color-foam-50: #eef7f9;
+  --color-foam-100: #dcecf1;
+  --color-foam-300: #adcedb;
+  --color-foam-400: #8fb8c8;
+
+  --color-lit-300: #6ff0dc;
+  --color-lit-400: #3fe0c8;
+  --color-lit-600: #17a892;
+
+  --color-lantern-300: #ffc978;
+  --color-lantern-400: #ffb454;
+
+  --color-coral-300: #ff9aa6;
+  --color-coral-400: #ff7a8a;
+
+  --color-orchid-300: #c4b5fd;
+  --color-orchid-400: #a78bfa;
+
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'JetBrains Mono', monospace;
+}
+
+@layer base {
+  html {
+    background: var(--color-harbor-950);
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background:
+      /* A single soft light source at the top, like a dock lamp over water. */
+      radial-gradient(1100px 520px at 50% -18%, #0d2f3f 0%, transparent 70%),
+      var(--color-harbor-950);
+    color: var(--color-foam-50);
+    font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  /* Numbers are the primary index in this interface, so they must never shift
+     width as they tick. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-lit-400);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-lit-600);
+    color: var(--color-harbor-975);
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-harbor-950);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-harbor-700);
+    border-radius: 99px;
+    border: 3px solid var(--color-harbor-950);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-harbor-600);
+  }
+}
+
+@layer utilities {
+  /* The stencilled label used for framework badges and column headings —
+     small, wide-tracked mono, the way things are marked on a real dock. */
+  .stencil {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+}
+
+/* A service that has only just appeared gets one amber sweep across its row.
+   This is the payoff of live detection: you see the moment it docks. */
+@keyframes dock-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(200%);
+  }
+}
+
+@keyframes buoy {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.82);
+  }
+}
+
+.animate-dock-in {
+  animation: dock-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.animate-sweep {
+  animation: sweep 1.6s ease-in-out 2;
+}
+
+.animate-buoy {
+  animation: buoy 2.4s ease-in-out infinite;
+}
+
+/* ── Harbour view ──────────────────────────────────────────────────────────
+   The playful counterpart to the manifest. Every motion here is slow and
+   ambient: the point is a harbour that feels alive at a glance, not a page
+   that demands attention. */
+
+/* A hull riding the swell. Staggered per boat so the fleet never moves in
+   lockstep, which is what would make it read as an animation rather than water. */
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1.1deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(1.1deg);
+  }
+}
+
+/* The float on a cast line, out of phase with the boat that cast it. */
+@keyframes bobber {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2.5px);
+  }
+}
+
+/* Water surface: two offset gradients sliding at different speeds.
+   Slides the strip by exactly one gradient period, so the pattern lands back on
+   itself and the loop is seamless. It moves with a transform rather than
+   background-position because only the former runs on the compositor;
+   background-position forced a style recalc and repaint on all 60 frames a
+   second, which was the single most expensive thing on the page. */
+@keyframes drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(var(--drift-period, 50px), 0, 0);
+  }
+}
+
+/* The lighthouse sweep — one slow rotation, the only thing on the page that
+   moves far enough to catch the eye. */
+@keyframes sweep-beam {
+  0% {
+    transform: rotate(-32deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.5;
+  }
+  50% {
+    transform: rotate(26deg);
+    opacity: 0.16;
+  }
+  85% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: rotate(-32deg);
+    opacity: 0;
+  }
+}
+
+/* A boat that has only just cast off leaves a wake behind it. */
+@keyframes wake {
+  0% {
+    transform: scaleX(0.2);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scaleX(1.9);
+    opacity: 0;
+  }
+}
+
+@keyframes lamp {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.animate-bob {
+  animation: bob 5.5s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+.animate-bobber {
+  animation: bobber 3.1s ease-in-out infinite;
+}
+.animate-drift {
+  animation: drift 26s linear infinite;
+  /* Extends one period past its clip on the left so sliding right never
+     uncovers a gap. */
+  position: absolute;
+  inset-block: 0;
+  left: calc(-1 * var(--drift-period, 50px));
+  width: calc(100% + var(--drift-period, 50px));
+}
+.animate-sweep-beam {
+  animation: sweep-beam 11s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+.animate-wake {
+  animation: wake 2.2s ease-out infinite;
+}
+.animate-lamp {
+  animation: lamp 3.4s ease-in-out infinite;
+}
+
+/* Nobody is looking: hold every animation where it stands. A running animation
+   keeps the browser producing frames at full refresh rate, so an unattended
+   harbour would burn a quarter of a core drawing water for an empty chair. See
+   lib/calm.ts for who sets this and why focus is the trigger rather than
+   visibility alone. Paused rather than removed, so the scene resumes instead of
+   jumping when the window comes back.
+
+   Only the endless ambient animations are listed. One-shot animations must keep
+   running: dock-in fills from opacity 0, so pausing it would leave a
+   just-started app's row invisible until the window regained focus. */
+html[data-calm] .animate-buoy,
+html[data-calm] .animate-bob,
+html[data-calm] .animate-bobber,
+html[data-calm] .animate-drift,
+html[data-calm] .animate-sweep-beam,
+html[data-calm] .animate-wake,
+html[data-calm] .animate-lamp {
+  animation-play-state: paused !important;
+}
+
+/* With reduced motion the harbour becomes a still illustration. It must stay
+   fully legible: nothing here encodes meaning through movement alone. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-dock-in,
+  .animate-sweep,
+  .animate-buoy,
+  .animate-bob,
+  .animate-bobber,
+  .animate-drift,
+  .animate-sweep-beam,
+  .animate-wake,
+  .animate-lamp {
+    animation: none;
+  }
+  * {
+    transition-duration: 1ms !important;
+  }
+}
