@@ -233,8 +233,11 @@ export default function App() {
           ))}
 
         {/* What could be running, but isn't. Only in the manifest: the harbour
-            draws these in its boatyard instead. */}
-        {pane === 'dashboard' && snapshot && view === 'manifest' && !searching && snapshot.ashore.length > 0 && (
+            draws these in its boatyard instead.
+            Rendered even when empty, because this section holds the control for
+            which directories are scanned — hiding it when nothing was found would
+            hide the one thing that fixes nothing being found. */}
+        {pane === 'dashboard' && snapshot && view === 'manifest' && !searching && (
           <AshoreList
             projects={snapshot.ashore}
             skipped={snapshot.ashoreSkipped}

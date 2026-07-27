@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -57,7 +58,19 @@ type Catalog struct {
 
 // New returns a Catalog over the given roots. Missing roots are ignored.
 func New(roots []string, ttl time.Duration) *Catalog {
+	return &Catalog{roots: CleanRoots(roots), ttl: ttl}
+}
+
+// CleanRoots normalises a root list: trims blanks, expands a leading ~, and
+// makes each path absolute and lexically clean.
+//
+// The tilde matters more than it looks. A shell expands only the first ~ in
+// `--roots ~/projects,~/git`, because the whole thing is one word — the second
+// arrives literally, so expanding here is what makes a comma-separated list
+// behave the way anyone would expect.
+func CleanRoots(roots []string) []string {
 	cleaned := make([]string, 0, len(roots))
+	seen := make(map[string]bool, len(roots))
 	for _, root := range roots {
 		root = strings.TrimSpace(root)
 		if root == "" {
@@ -68,14 +81,52 @@ func New(roots []string, ttl time.Duration) *Catalog {
 				root = filepath.Join(home, strings.TrimPrefix(root, "~"))
 			}
 		}
-		cleaned = append(cleaned, filepath.Clean(root))
+		root = filepath.Clean(root)
+		if !filepath.IsAbs(root) {
+			if abs, err := filepath.Abs(root); err == nil {
+				root = abs
+			}
+		}
+		if seen[root] {
+			continue
+		}
+		seen[root] = true
+		cleaned = append(cleaned, root)
 	}
-	return &Catalog{roots: cleaned, ttl: ttl}
+	return cleaned
+}
+
+// SetRoots replaces the directories being scanned and drops the cached scan, so
+// the next read reflects the new list rather than the old one's TTL.
+//
+// It reports whether the list actually changed: the caller has to rebuild the
+// identifier's boundaries when it does, and that throws away every cached
+// identity, which is not worth doing for a no-op.
+func (c *Catalog) SetRoots(roots []string) bool {
+	cleaned := CleanRoots(roots)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if slices.Equal(cleaned, c.roots) {
+		return false
+	}
+	c.roots = cleaned
+	c.projects = nil
+	c.skipped = 0
+	c.scanned = time.Time{} // forces a rescan on the next read
+	return true
 }
 
 // Roots reports the directories being scanned. The identifier uses these as
 // boundaries: a directory that holds projects is never itself a project.
-func (c *Catalog) Roots() []string { return c.roots }
+//
+// Returns a copy under the lock, because SetRoots can replace the list while a
+// sweep is reading it.
+func (c *Catalog) Roots() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.roots)
+}
 
 // Projects returns the catalogue, rescanning at most once per TTL. The second
 // return value is how many directories were seen but had no startable command,
@@ -88,9 +139,12 @@ func (c *Catalog) Projects(ctx context.Context) ([]Project, int) {
 		c.mu.Unlock()
 		return projects, skipped
 	}
+	// Snapshot the roots to scan with: the lock is released for the walk, and
+	// SetRoots can replace the list while it runs.
+	roots := slices.Clone(c.roots)
 	c.mu.Unlock()
 
-	projects, skipped := c.scan(ctx)
+	projects, skipped := c.scan(ctx, roots)
 
 	c.mu.Lock()
 	c.projects, c.skipped, c.scanned = projects, skipped, time.Now()
@@ -130,11 +184,11 @@ var skipDirs = map[string]bool{
 	"Library": true, "Applications": true,
 }
 
-func (c *Catalog) scan(ctx context.Context) ([]Project, int) {
+func (c *Catalog) scan(ctx context.Context, roots []string) ([]Project, int) {
 	var projects []Project
 	skipped := 0
 
-	for _, root := range c.roots {
+	for _, root := range roots {
 		entries, err := os.ReadDir(root)
 		if err != nil {
 			continue

@@ -45,6 +45,9 @@ type Server struct {
 	addr     string
 	log      *slog.Logger
 
+	// roots persists the scanned-directory list edited from the dashboard.
+	roots *catalog.RootStore
+
 	// placeholder is served when the dashboard bundle is absent.
 	placeholder []byte
 
@@ -59,6 +62,7 @@ func New(
 	launcher *catalog.Launcher,
 	logStore *logs.Store,
 	sampler *health.Sampler,
+	roots *catalog.RootStore,
 	ui fs.FS,
 	placeholder []byte,
 	addr string,
@@ -70,6 +74,7 @@ func New(
 		launcher:    launcher,
 		logs:        logStore,
 		health:      sampler,
+		roots:       roots,
 		ui:          ui,
 		placeholder: placeholder,
 		addr:        addr,
@@ -98,6 +103,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("GET /api/logs/content", s.handleLogContent)
 	mux.HandleFunc("POST /api/logs/dismiss", s.guard(s.handleLogDismiss))
+	mux.HandleFunc("GET /api/roots", s.handleRoots)
+	mux.HandleFunc("POST /api/roots/add", s.guard(s.handleRootAdd))
+	mux.HandleFunc("POST /api/roots/remove", s.guard(s.handleRootRemove))
 
 	if s.ui != nil {
 		mux.Handle("/", s.spaHandler())

@@ -184,7 +184,42 @@ pinning any part of a project surfaces the whole cluster, and changes no roles.
 ## What's *not* running
 
 Marina also scans your project directories for apps that could be running but
-aren't — `~/projects` by default, overridable with `--roots` or `MARINA_ROOTS`.
+aren't — `~/projects` by default.
+
+### Which directories get scanned
+
+Most machines keep projects in more than one place. Open **scanned directories**
+under the boatyard to see the current list with a project count each, add one, or
+remove one. Changes take effect immediately — no restart, and no waiting for the
+scan interval — and are saved in `~/.local/share/marina/roots.json` so they
+survive a reboot.
+
+You can also set them at install time, which is the easier path when setting up a
+new machine:
+
+```bash
+npm run setup -- --roots ~/projects,~/git,~/workspace
+```
+
+Three things are worth knowing, because each one otherwise fails quietly:
+
+- **Each directory is read one level deep.** `~/git/app` is found; `~/git/clients/app`
+  is not. Add the subfolder itself for those. A root showing **0 projects** in the
+  list is usually this.
+- **A missing or unreadable directory is skipped in silence.** The list marks those
+  cases explicitly rather than leaving a renamed folder looking fine.
+- **Listing every directory also improves naming, not just the boatyard.** These
+  roots double as *boundaries* when identifying what's already running: a directory
+  that holds projects is never itself a project. That's the rule that stops a
+  monorepo package from calling itself `frontend`. If projects live in `~/git` and
+  Marina doesn't know that, the upward walk loses that boundary and a repo-less
+  monorepo in there can pick the wrong name. `$HOME` and `/` are always boundaries,
+  so nothing can ever be named after your home directory.
+
+Precedence is deliberately blunt: **`roots.json` wins if it exists**, and
+`--roots`/`MARINA_ROOTS` only seed a machine that has never set them. Passing
+`--roots` explicitly clears the saved list and says so, so the flag always works
+when you reach for it.
 
 It works out how each one starts by reading the directory: the `dev` script from
 `package.json` (with the package manager taken from the lockfile, because running

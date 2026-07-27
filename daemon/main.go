@@ -108,9 +108,19 @@ func runServe() int {
 	st := store.New(ctx, *dsn, adminDSN(*dsn, *dbName), *dbName, log)
 	defer st.Close()
 
+	// Directories added in the dashboard are kept in roots.json and win over the
+	// flag, which only seeds a machine that has never set them. The installer
+	// removes that file when --roots is passed explicitly, so the flag is still
+	// the way to override from outside.
+	rootStore := catalog.NewRootStore(stateDir())
+	scanRoots, fromFile := rootStore.Load(strings.Split(*roots, ","))
+	if fromFile {
+		log.Info("marina: scanning directories from roots.json", "roots", scanRoots)
+	}
+
 	// The catalogue rescans the filesystem far less often than the port table:
 	// projects appear and disappear on the order of days, not seconds.
-	cat := catalog.New(strings.Split(*roots, ","), 30*time.Second)
+	cat := catalog.New(scanRoots, 30*time.Second)
 	launchDir := filepath.Join(stateDir(), "launches")
 	// The environment a launch runs with comes from the user's own shell, not from
 	// launchd's minimal one — otherwise nvm-installed tools are simply missing.
@@ -135,7 +145,7 @@ func runServe() int {
 	mon := monitor.New(st, cat, launcher, sampler, *interval, version, excluded, sourceDir, log)
 	go mon.Run(ctx)
 
-	srv := api.New(mon, st, launcher, logStore, sampler, webui.FS(), webui.Placeholder(), *addr, log)
+	srv := api.New(mon, st, launcher, logStore, sampler, rootStore, webui.FS(), webui.Placeholder(), *addr, log)
 	if err := srv.ListenAndServe(ctx); err != nil {
 		log.Error("marina: server stopped", "err", err)
 		return 1

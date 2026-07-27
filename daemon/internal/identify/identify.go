@@ -228,6 +228,17 @@ type dirInfo struct {
 // New returns a ready Resolver. boundaries are directories that contain projects
 // (the catalogue's roots); $HOME and / are always treated as boundaries too.
 func New(boundaries []string) *Resolver {
+	return &Resolver{
+		dirs:       make(map[string]dirInfo),
+		byProc:     make(map[int]Service),
+		boundaries: boundarySet(boundaries),
+	}
+}
+
+// boundarySet builds the lookup used by the upward walk. $HOME and / are always
+// included: without them a project directly inside the home directory could walk
+// up and name itself after the home directory.
+func boundarySet(boundaries []string) map[string]bool {
 	set := make(map[string]bool, len(boundaries)+2)
 	for _, b := range boundaries {
 		if b = strings.TrimSpace(b); b != "" {
@@ -238,11 +249,26 @@ func New(boundaries []string) *Resolver {
 		set[home] = true
 	}
 	set["/"] = true
-	return &Resolver{
-		dirs:       make(map[string]dirInfo),
-		byProc:     make(map[int]Service),
-		boundaries: set,
-	}
+	return set
+}
+
+// SetBoundaries replaces the boundary set after the scanned roots change.
+//
+// Both caches have to go with it. dirs holds each directory's resolved project,
+// which is computed by walking up until a boundary stops it — every entry is an
+// answer to a question whose rules just changed. byProc holds the project a live
+// PID belongs to, derived from those same directories, so keeping it would leave
+// running apps labelled under the old rules until they restarted. Dropping both
+// costs one round of ps and lsof on the next sweep, which is the correct price
+// for adding a directory.
+func (r *Resolver) SetBoundaries(boundaries []string) {
+	set := boundarySet(boundaries)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.boundaries = set
+	r.dirs = make(map[string]dirInfo)
+	r.byProc = make(map[int]Service)
 }
 
 // Unresolved returns the subset of pids whose identity is not already cached.

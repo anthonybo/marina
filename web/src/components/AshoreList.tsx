@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from 'react'
 import { portEvidence } from '../lib/format'
 import type { Ashore } from '../lib/types'
+import { RootsEditor } from './RootsEditor'
 
 /**
  * Projects Marina found on disk that aren't running.
@@ -75,7 +76,9 @@ export const AshoreList = memo(function AshoreList({
 
       {shown.length === 0 && (
         <p className="rounded-lg border border-dashed border-harbor-800 px-4 py-3 font-mono text-[0.7rem] text-foam-400">
-          Nothing matches “{query}”.
+          {q
+            ? `Nothing matches “${query}”.`
+            : 'No projects found. Check which directories are being scanned below.'}
         </p>
       )}
 
@@ -86,6 +89,9 @@ export const AshoreList = memo(function AshoreList({
           Marina recognises.
         </p>
       )}
+
+      {/* Where this list comes from, and how to point it somewhere else. */}
+      <RootsEditor />
     </section>
   )
 })

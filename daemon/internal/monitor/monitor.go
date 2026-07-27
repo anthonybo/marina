@@ -187,6 +187,34 @@ func (m *Monitor) Subscribe() (<-chan Snapshot, func()) {
 // is reflected without waiting for the next tick.
 func (m *Monitor) Refresh(ctx context.Context) { m.tick(ctx) }
 
+// SetRoots changes the directories scanned for projects, and keeps the identifier
+// in step.
+//
+// These two have to move together. The catalogue's roots are also the boundaries
+// the identifier walks up to, so changing one without the other would leave
+// running apps named by the old rules — the exact failure that made a monorepo
+// package call itself "frontend". The sweep afterwards is what makes the new
+// directory's projects appear without waiting for the scan TTL.
+func (m *Monitor) SetRoots(ctx context.Context, roots []string) []string {
+	if m.catalog.SetRoots(roots) {
+		m.resolver.SetBoundaries(m.catalog.Roots())
+		m.tick(ctx)
+	}
+	return m.catalog.Roots()
+}
+
+// Roots reports the directories currently being scanned.
+func (m *Monitor) Roots() []string { return m.catalog.Roots() }
+
+// CatalogProjects reports every project the catalogue found, whether or not it is
+// running. The boatyard deliberately excludes running projects, so it is the wrong
+// source for "how much is this directory contributing" — a root whose projects are
+// all up would look empty.
+func (m *Monitor) CatalogProjects(ctx context.Context) []catalog.Project {
+	projects, _ := m.catalog.Projects(ctx)
+	return projects
+}
+
 // freshWindow is how long a newly started service is called out in the UI.
 const freshWindow = 20 * time.Second
 

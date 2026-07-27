@@ -3,6 +3,7 @@ import type { Ashore, Service } from '../lib/types'
 import { LoadMeter } from './LoadMeter'
 import { loadLevel, type HealthState } from '../lib/useHealth'
 import { clusterServices, primaryName, secondaryName, uptime, type Cluster } from '../lib/format'
+import { RootsEditor } from './RootsEditor'
 
 /**
  * The harbour: the same data as the manifest, read as a place.
@@ -149,32 +150,38 @@ export function HarborView({
         </section>
       )}
 
-      {/* ── Boatyard: yours, hauled out, ready to put back in the water ──── */}
-      {ashore.length > 0 && (
-        <section className="relative border-t border-harbor-700/60 bg-[#071e28] px-4 pb-4 pt-4">
-          <SectionLabel>
-            <LegendCradle /> In the boatyard · {ashore.length} not running · click to launch
-          </SectionLabel>
-          {/* Aligned columns, not wrapped chips. Variable-width chips produced ragged
-              rows with nothing lining up vertically, so twenty-two calm items read as
-              clutter. Fixed columns give the eye an edge to run down, which is what
-              makes a long list scannable. */}
-          <ul
-            className="grid gap-x-7 gap-y-px"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(13.5rem, 1fr))' }}
-          >
-            {ashore.map((project) => (
-              <Cradled key={project.path} project={project} onStart={onStart} />
-            ))}
-          </ul>
-          {ashoreSkipped > 0 && (
-            <p className="mt-3 font-mono text-[0.62rem] text-foam-400">
-              {ashoreSkipped} more {ashoreSkipped === 1 ? 'directory' : 'directories'} with no start
-              command Marina recognises.
-            </p>
-          )}
-        </section>
-      )}
+      {/* ── Boatyard: yours, hauled out, ready to put back in the water ────
+          Shown even when empty: this is where the scanned-directory control lives,
+          and an empty boatyard is exactly when you need it. */}
+      <section className="relative border-t border-harbor-700/60 bg-[#071e28] px-4 pb-4 pt-4">
+        <SectionLabel>
+          <LegendCradle />{' '}
+          {ashore.length > 0
+            ? `In the boatyard · ${ashore.length} not running · click to launch`
+            : 'In the boatyard · nothing hauled out'}
+        </SectionLabel>
+        {/* Aligned columns, not wrapped chips. Variable-width chips produced ragged
+            rows with nothing lining up vertically, so twenty-two calm items read as
+            clutter. Fixed columns give the eye an edge to run down, which is what
+            makes a long list scannable. */}
+        <ul
+          className="grid gap-x-7 gap-y-px"
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(13.5rem, 1fr))' }}
+        >
+          {ashore.map((project) => (
+            <Cradled key={project.path} project={project} onStart={onStart} />
+          ))}
+        </ul>
+        {ashoreSkipped > 0 && (
+          <p className="mt-3 font-mono text-[0.62rem] text-foam-400">
+            {ashoreSkipped} more {ashoreSkipped === 1 ? 'directory' : 'directories'} with no start
+            command Marina recognises.
+          </p>
+        )}
+        {/* The boatyard only holds what the scanned directories turned up, so this
+            is where it belongs in this view too. */}
+        <RootsEditor />
+      </section>
 
       {/* ── Shore: the infrastructure everything else depends on ─────────── */}
       {shore.length > 0 && (
