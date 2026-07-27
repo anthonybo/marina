@@ -55,6 +55,8 @@ export const AshoreList = memo(function AshoreList({
           />
         )}
         <span className="tnum font-mono text-[0.7rem] text-foam-400">{shown.length}</span>
+        {/* Which directories this list comes from. Settings, so it stays an icon. */}
+        <RootsEditor />
       </div>
 
       {/* Aligned columns rather than wrapped chips: variable-width chips leave every
@@ -78,7 +80,7 @@ export const AshoreList = memo(function AshoreList({
         <p className="rounded-lg border border-dashed border-harbor-800 px-4 py-3 font-mono text-[0.7rem] text-foam-400">
           {q
             ? `Nothing matches “${query}”.`
-            : 'No projects found. Check which directories are being scanned below.'}
+            : 'No projects found. Check which directories are scanned with the gear above.'}
         </p>
       )}
 
@@ -90,8 +92,6 @@ export const AshoreList = memo(function AshoreList({
         </p>
       )}
 
-      {/* Where this list comes from, and how to point it somewhere else. */}
-      <RootsEditor />
     </section>
   )
 })

@@ -159,6 +159,8 @@ export function HarborView({
           {ashore.length > 0
             ? `In the boatyard · ${ashore.length} not running · click to launch`
             : 'In the boatyard · nothing hauled out'}
+          {/* Which directories this section is drawn from. */}
+          <RootsEditor />
         </SectionLabel>
         {/* Aligned columns, not wrapped chips. Variable-width chips produced ragged
             rows with nothing lining up vertically, so twenty-two calm items read as
@@ -178,9 +180,6 @@ export function HarborView({
             command Marina recognises.
           </p>
         )}
-        {/* The boatyard only holds what the scanned directories turned up, so this
-            is where it belongs in this view too. */}
-        <RootsEditor />
       </section>
 
       {/* ── Shore: the infrastructure everything else depends on ─────────── */}
@@ -870,8 +869,10 @@ function Planks() {
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  // inline-flex so a label can carry a glyph beside its text on one baseline.
-  return <p className="stencil mb-2.5 flex items-center gap-1.5 text-foam-400">{children}</p>
+  // A div rather than a p: a label can carry a control beside its text, and a p
+  // may not contain block content — the browser would close the paragraph early
+  // and reparent the rest.
+  return <div className="stencil mb-2.5 flex items-center gap-1.5 text-foam-400">{children}</div>
 }
 
 function Legend() {
