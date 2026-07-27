@@ -73,6 +73,15 @@ cp -R "$HERE/dist/Marina.app" "$DEST/Marina.app"
 ln -sf "$DEST/marina" "$BIN_DIR/marina"
 echo "  ✓ installed to $DEST"
 
+# Directories added in the dashboard live in roots.json and take precedence over
+# --roots, so that a UI edit is not silently undone by the next upgrade. Passing
+# --roots explicitly is the deliberate override, and has to win — otherwise the
+# flag would appear to do nothing at all.
+if [ -n "$ROOTS" ] && [ -f "$DEST/roots.json" ]; then
+  rm -f "$DEST/roots.json"
+  echo "  ! --roots given: cleared the directory list saved from the dashboard"
+fi
+
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "  ! add $BIN_DIR to your PATH to use the 'marina' command" ;;
@@ -123,10 +132,36 @@ PLIST
 }
 
 reload() {
-  local label="$1" plist="$2"
-  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$plist"
-  launchctl kickstart -k "gui/$(id -u)/$label" 2>/dev/null || true
+  local label="$1" plist="$2" domain="gui/$(id -u)" i
+  launchctl bootout "$domain/$label" 2>/dev/null || true
+
+  # bootout returns before launchd has finished tearing the job down, so a
+  # bootstrap issued immediately after can fail with "operation already in
+  # progress" — and under `set -e` that aborts the install with the daemon
+  # unloaded, which is the worst possible outcome for an in-place upgrade.
+  # Wait for the job to actually go, then retry the bootstrap.
+  for i in $(seq 1 40); do
+    launchctl print "$domain/$label" >/dev/null 2>&1 || break
+    sleep 0.25
+  done
+
+  for i in $(seq 1 10); do
+    if launchctl bootstrap "$domain" "$plist" 2>/dev/null; then
+      launchctl kickstart -k "$domain/$label" 2>/dev/null || true
+      return 0
+    fi
+    # Already loaded is a success for our purposes: kickstart will restart it
+    # with the new binary.
+    if launchctl print "$domain/$label" >/dev/null 2>&1; then
+      launchctl kickstart -k "$domain/$label" 2>/dev/null || true
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  echo "ERROR: could not register $label with launchd." >&2
+  echo "       Try: launchctl bootout $domain/$label && bash scripts/install.sh" >&2
+  return 1
 }
 
 write_plist "$DAEMON_LABEL" "$AGENTS/$DAEMON_LABEL.plist" "$DEST/marina" "serve"
