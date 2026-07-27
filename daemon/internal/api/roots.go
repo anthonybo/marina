@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/anthonybo/marina/daemon/internal/catalog"
 )
@@ -26,16 +28,18 @@ type rootView struct {
 }
 
 func (s *Server) handleRoots(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.rootsPayload(r))
+	ctx, cancel := rescanCtx(r)
+	defer cancel()
+	writeJSON(w, http.StatusOK, s.rootsPayload(ctx))
 }
 
-func (s *Server) rootsPayload(r *http.Request) map[string]any {
+func (s *Server) rootsPayload(ctx context.Context) map[string]any {
 	roots := s.mon.Roots()
 	views := make([]rootView, 0, len(roots))
 
 	// Attribute each project to the root that holds it. The catalogue's scan is
-	// cached, so this costs a walk over a list rather than the disk.
-	projects := s.mon.CatalogProjects(r.Context())
+	// cached, so this usually costs a walk over a list rather than the disk.
+	projects := s.mon.CatalogProjects(ctx)
 	for _, root := range roots {
 		view := rootView{Path: root, Display: collapseHome(root)}
 		if info, err := os.Stat(root); err == nil && info.IsDir() {
@@ -68,6 +72,15 @@ func (s *Server) handleRootAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx, cancel := rescanCtx(r)
+	defer cancel()
+
+	// Serialised: read-modify-write on the root list, so two requests arriving
+	// together must not each build their update from the same starting point and
+	// lose one of them.
+	s.rootsMu.Lock()
+	defer s.rootsMu.Unlock()
+
 	current := s.mon.Roots()
 	path, err := catalog.ValidateRoot(body.Path, current)
 	if err != nil {
@@ -85,9 +98,9 @@ func (s *Server) handleRootAdd(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.mon.SetRoots(r.Context(), updated)
+	s.mon.SetRoots(ctx, updated)
 	s.log.Info("root added", "path", path)
-	writeJSON(w, http.StatusOK, s.rootsPayload(r))
+	writeJSON(w, http.StatusOK, s.rootsPayload(ctx))
 }
 
 func (s *Server) handleRootRemove(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +110,12 @@ func (s *Server) handleRootRemove(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
+
+	ctx, cancel := rescanCtx(r)
+	defer cancel()
+
+	s.rootsMu.Lock()
+	defer s.rootsMu.Unlock()
 
 	current := s.mon.Roots()
 	cleaned := catalog.CleanRoots([]string{body.Path})
@@ -117,9 +136,19 @@ func (s *Server) handleRootRemove(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.mon.SetRoots(r.Context(), updated)
+	s.mon.SetRoots(ctx, updated)
 	s.log.Info("root removed", "path", cleaned[0])
-	writeJSON(w, http.StatusOK, s.rootsPayload(r))
+	writeJSON(w, http.StatusOK, s.rootsPayload(ctx))
+}
+
+// rescanCtx detaches a rescan from the request that triggered it.
+//
+// Adding a directory changes daemon state, and the sweep that follows should not
+// be abandoned because the browser moved on: a scan cut short returns a partial
+// list, and a partial list is not something to cache or show. The deadline keeps
+// a wedged filesystem from holding the handler forever.
+func rescanCtx(r *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
 }
 
 // collapseHome renders /Users/you/git as ~/git.

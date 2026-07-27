@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -155,4 +156,79 @@ func names(projects []Project, _ int) []string {
 		out = append(out, p.Name)
 	}
 	return out
+}
+
+// A cancelled scan must not become the cached answer. The API passes the HTTP
+// request's context, so a user who closes the tab mid-request would otherwise
+// leave a truncated project list cached for the whole TTL.
+func TestCancelledScanDoesNotPoisonTheCache(t *testing.T) {
+	root := t.TempDir()
+	mustProject(t, filepath.Join(root, "alpha"))
+	mustProject(t, filepath.Join(root, "beta"))
+
+	c := New([]string{root}, time.Hour)
+
+	dead, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Projects(dead) // the aborted request
+
+	got := names(c.Projects(t.Context()))
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"alpha", "beta"}) {
+		t.Fatalf("after a cancelled scan the catalogue reports %v, want [alpha beta]", got)
+	}
+}
+
+// Scanned directories double as naming boundaries, so one placed at or inside a
+// project silently misnames that project's running apps. Refusing it here is the
+// guard; identify/boundary_change_test.go pins down why it is needed.
+func TestValidateRootRefusesProjectsAndTheirInsides(t *testing.T) {
+	root := t.TempDir()
+	projects := mkdir(t, filepath.Join(root, "projects"))
+
+	// A repo-less monorepo, and a git repo, each with an inner package.
+	mono := mkdir(t, filepath.Join(projects, "quadcitygo"))
+	writeJSON(t, filepath.Join(mono, "package.json"), `{"name":"quadcitygo"}`)
+	monoInner := mkdir(t, filepath.Join(mono, "frontend"))
+
+	repo := mkdir(t, filepath.Join(projects, "stormwire"))
+	mkdir(t, filepath.Join(repo, ".git"))
+	repoInner := mkdir(t, filepath.Join(repo, "packages", "frontend"))
+
+	for _, tc := range []struct{ name, path string }{
+		{"a repo-less project itself", mono},
+		{"inside a repo-less project", monoInner},
+		{"a git repository itself", repo},
+		{"deep inside a git repository", repoInner},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ValidateRoot(tc.path, nil); err == nil {
+				t.Fatalf("ValidateRoot(%q) was accepted; it would misname that project's apps", tc.path)
+			} else {
+				t.Logf("refused with: %v", err)
+			}
+		})
+	}
+
+	// The container itself must still be accepted — including when it holds a
+	// stray package.json with no name, which is the real state of ~/projects.
+	writeJSON(t, filepath.Join(projects, "package.json"), `{"private":true}`)
+	if _, err := ValidateRoot(projects, nil); err != nil {
+		t.Fatalf("a directory of projects was refused: %v", err)
+	}
+}
+
+func mkdir(t *testing.T, path string) string {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeJSON(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }

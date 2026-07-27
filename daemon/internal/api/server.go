@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -47,6 +48,8 @@ type Server struct {
 
 	// roots persists the scanned-directory list edited from the dashboard.
 	roots *catalog.RootStore
+	// rootsMu serialises read-modify-write on that list.
+	rootsMu sync.Mutex
 
 	// placeholder is served when the dashboard bundle is absent.
 	placeholder []byte

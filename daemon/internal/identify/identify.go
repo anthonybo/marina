@@ -507,6 +507,24 @@ var projectMarkers = []string{
 // A package.json must have a "name" to count. That single condition is what keeps
 // a stray ~/projects/package.json — which has no name — from being mistaken for a
 // project root, and it is a fair test: real projects name themselves.
+// IsProject reports whether a directory declares itself a project.
+//
+// Exported so the catalogue can refuse a scanned directory that is a project, or
+// sits inside one. Scanned directories double as the boundaries this walk stops
+// at, and a boundary inside a project truncates the walk below the real root —
+// which renames a running app after whichever subdirectory it stopped at. The two
+// must use the same rule, so they share this one.
+func IsProject(dir string) bool {
+	// .git counts here even though it is absent from projectMarkers: the walk
+	// treats a git root as its own terminal condition rather than as a marker, but
+	// for "is this directory a project" it is the strongest evidence there is.
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+		return true
+	}
+	_, ok := selfNamedProject(dir)
+	return ok
+}
+
 func selfNamedProject(dir string) (string, bool) {
 	for _, marker := range projectMarkers {
 		if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {

@@ -146,6 +146,15 @@ func (c *Catalog) Projects(ctx context.Context) ([]Project, int) {
 
 	projects, skipped := c.scan(ctx, roots)
 
+	// A cancelled scan stops partway and returns what it had, which must never
+	// become the cached answer: the API scans with the HTTP request's context, so
+	// closing the tab mid-request would otherwise leave a truncated — often
+	// empty — boatyard cached for the whole TTL. Leaving the cache untouched
+	// means the next read rescans.
+	if ctx.Err() != nil {
+		return projects, skipped
+	}
+
 	c.mu.Lock()
 	c.projects, c.skipped, c.scanned = projects, skipped, time.Now()
 	c.mu.Unlock()

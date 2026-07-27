@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/anthonybo/marina/daemon/internal/identify"
 )
 
 // RootStore persists the scanned-directory list so a directory added in the
@@ -118,7 +120,44 @@ func ValidateRoot(input string, existing []string) (string, error) {
 			return "", fmt.Errorf("%s contains %s, which is already scanned — remove that one first", path, other)
 		}
 	}
+
+	// The important one, and the least obvious. Scanned directories are also the
+	// boundaries the identifier stops its upward walk at, so one placed at or
+	// inside a project truncates that walk below the project's real root and the
+	// app gets named after whichever subdirectory it stopped at — a monorepo
+	// package suddenly calling itself "frontend". A git root does not save it: the
+	// boundary is checked before .git is ever found. Verified in
+	// identify/boundary_change_test.go.
+	if identify.IsProject(path) {
+		return "", fmt.Errorf("%s is a project, not a directory of projects — add its parent instead", path)
+	}
+	if owner, ok := enclosingProject(path); ok {
+		return "", fmt.Errorf("%s is inside the project %s — scanning it would misname that project's apps",
+			path, filepath.Base(owner))
+	}
 	return path, nil
+}
+
+// enclosingProject returns the nearest ancestor that declares itself a project.
+//
+// Stops at $HOME and /, which are never projects for this purpose even when the
+// home directory happens to be a git repository — a dotfiles repo must not make
+// every directory beneath it "inside a project".
+func enclosingProject(path string) (string, bool) {
+	home, _ := os.UserHomeDir()
+	for cur := filepath.Dir(path); ; {
+		if cur == "/" || cur == "." || (home != "" && cur == home) {
+			return "", false
+		}
+		if identify.IsProject(cur) {
+			return cur, true
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return "", false
+		}
+		cur = parent
+	}
 }
 
 // isInside reports whether child is below parent.
