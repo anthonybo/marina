@@ -1,0 +1,16 @@
+# Build output
+/dist/
+/menubar/.build/
+
+# The dashboard bundle is generated into the Go embed directory by the build.
+# Only .gitkeep is tracked, so go:embed always has a directory to find, and the
+# tracked placeholder page lives outside dist where a build cannot clobber it.
+/daemon/internal/webui/dist/*
+!/daemon/internal/webui/dist/.gitkeep
+
+node_modules/
+*.log
+
+.DS_Store
+.idea/
+.vscode/
