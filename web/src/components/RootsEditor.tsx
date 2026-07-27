@@ -17,10 +17,13 @@ export function RootsEditor() {
   const [open, setOpen] = useState(false)
   const { roots, file, loading, error, add, remove, clearError } = useRoots(open)
   const [draft, setDraft] = useState('')
+  /** Path awaiting a confirmed removal, if any. */
+  const [confirming, setConfirming] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (open) inputRef.current?.focus()
+    else setConfirming(null)
   }, [open])
 
   const submit = async (e: React.FormEvent) => {
@@ -46,6 +49,22 @@ export function RootsEditor() {
 
       {open && (
         <div className="mt-2 rounded-lg border border-harbor-800 bg-harbor-950 p-3">
+          {/* A titled panel with its own way out. Without these, the only
+              close-looking thing was the per-row button, which is destructive. */}
+          <div className="mb-2 flex items-baseline gap-3">
+            <h3 className="stencil shrink-0 text-foam-300">
+              Directories scanned for projects
+            </h3>
+            <span className="h-px flex-1 bg-harbor-800" aria-hidden />
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="shrink-0 rounded border border-harbor-700 px-2 py-0.5 font-mono text-[0.62rem] text-foam-100 transition-colors hover:border-lit-400/50 hover:text-lit-400"
+            >
+              done
+            </button>
+          </div>
+
           <ul className="mb-2.5 flex flex-col gap-1">
             {roots.map((root) => (
               <li key={root.path} className="flex items-center gap-2.5 font-mono text-[0.72rem]">
@@ -76,20 +95,58 @@ export function RootsEditor() {
                 )}
 
                 <span className="h-px flex-1 bg-harbor-800/70" aria-hidden />
-                <button
-                  type="button"
-                  onClick={() => remove(root.path)}
-                  disabled={loading}
-                  aria-label={`Stop scanning ${root.display}`}
-                  className="shrink-0 rounded px-1.5 text-[0.8rem] leading-none text-foam-400 transition-colors hover:bg-harbor-800 hover:text-coral-300 disabled:opacity-40"
-                >
-                  ×
-                </button>
+
+                {/* Deliberately a word, not an ×. An × at the right-hand edge of a
+                    panel reads as "close the panel" — it was misread exactly that
+                    way, and the click silently removed the only scanned directory.
+                    Two steps as well, because there is no undo for it. */}
+                {confirming === root.path ? (
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <span className="text-[0.62rem] text-foam-400">
+                      {roots.length === 1 ? 'scan nothing at all?' : 'stop scanning it?'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirming(null)
+                        remove(root.path)
+                      }}
+                      disabled={loading}
+                      className="rounded border border-coral-400/60 px-1.5 py-0.5 text-[0.62rem] text-coral-300 transition-colors hover:bg-coral-400/10 disabled:opacity-40"
+                    >
+                      yes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirming(null)}
+                      className="rounded border border-harbor-700 px-1.5 py-0.5 text-[0.62rem] text-foam-100 transition-colors hover:border-lit-400/50"
+                    >
+                      keep it
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(root.path)}
+                    disabled={loading}
+                    className="shrink-0 rounded px-1.5 py-0.5 font-mono text-[0.62rem] text-foam-400 transition-colors hover:text-coral-300 disabled:opacity-40"
+                  >
+                    stop scanning
+                  </button>
+                )}
               </li>
             ))}
             {roots.length === 0 && !loading && (
-              <li className="font-mono text-[0.7rem] text-foam-400">
-                No directories are being scanned, so the boatyard stays empty.
+              <li className="flex flex-wrap items-center gap-2 font-mono text-[0.7rem] text-foam-400">
+                <span>No directories are being scanned, so the boatyard stays empty.</span>
+                {/* The way back, without having to remember the default. */}
+                <button
+                  type="button"
+                  onClick={() => add('~/projects')}
+                  className="rounded border border-harbor-700 px-2 py-0.5 text-[0.66rem] text-foam-100 transition-colors hover:border-lit-400/50 hover:text-lit-400"
+                >
+                  scan ~/projects
+                </button>
               </li>
             )}
           </ul>
