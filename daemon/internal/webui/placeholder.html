@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Marina — dashboard not built</title>
+<style>
+  body {
+    background: #05161f;
+    color: #eef7f9;
+    font: 16px/1.65 ui-sans-serif, -apple-system, system-ui, sans-serif;
+    display: grid;
+    place-items: center;
+    min-height: 100vh;
+    margin: 0;
+  }
+  main { max-width: 34rem; padding: 2rem; }
+  h1 { font-size: 1.35rem; letter-spacing: -0.02em; margin: 0 0 0.5rem; }
+  p { color: #adcedb; margin: 0 0 1rem; }
+  code {
+    background: #0e2b3a;
+    border: 1px solid #143c4f;
+    padding: 0.15em 0.45em;
+    border-radius: 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.85em;
+    color: #6ff0dc;
+  }
+</style>
+<main>
+  <h1>The daemon is running, but the dashboard isn't built</h1>
+  <p>
+    Marina is watching your ports and the API is live at <code>/api/state</code>.
+    The browser UI just hasn't been bundled yet.
+  </p>
+  <p>Build it and restart:</p>
+  <p><code>npm start</code></p>
+</main>

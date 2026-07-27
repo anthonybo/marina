@@ -1,0 +1,3 @@
+# Keeps this directory in git so //go:embed all:dist compiles in a fresh
+# clone, before the dashboard has ever been built. Everything else here is
+# build output and ignored.
