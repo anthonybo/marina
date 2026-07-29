@@ -59,6 +59,12 @@ func mergePorts(
 			if seen[port] {
 				continue
 			}
+			// A port the OS handed out at random is not a prediction. Offering one
+			// back is worse than offering nothing: it reads as "this is the port
+			// this project uses" when the project never chose it.
+			if isDynamicPort(port) {
+				continue
+			}
 			seen[port] = true
 			merged = append(merged, catalog.ExpectedPort{
 				Port:   port,
@@ -92,6 +98,37 @@ func occupiedPorts(services []Service) map[int]holder {
 			label += " → " + s.Subpath
 		}
 		out[s.Port] = holder{label: label, kind: string(s.Kind)}
+	}
+	return out
+}
+
+// dynamicPortFloor is where the OS starts handing out ephemeral ports.
+//
+// A dev server binds a port somebody chose: 3000, 4321, 5173, 8080. A tool that
+// asks for any free port lands above this line — a test runner, a bundler's
+// temporary preview, an editor's language server. They are real listeners and
+// belong in the live list, but they are not the project's server, and treating
+// them as one costs twice over:
+//
+//   - the project vanishes from the boatyard, so it cannot be launched. Observed:
+//     `node scripts/check-clipping.mjs` on :54656 made a project look like it was
+//     already running, and the launch button simply wasn't there.
+//   - the port is remembered as the one the project "last used" and offered back
+//     as a prediction. Every port on record for that project was in this range.
+const dynamicPortFloor = 49152
+
+func isDynamicPort(port int) bool { return port >= dynamicPortFloor }
+
+// serverLike keeps the services that could plausibly be a project's own server,
+// for deciding whether a project is already up. Deliberately not used for
+// anything else: a listener on a dynamic port is still a listener.
+func serverLike(services []Service) []Service {
+	out := make([]Service, 0, len(services))
+	for _, s := range services {
+		if isDynamicPort(s.Port) {
+			continue
+		}
+		out = append(out, s)
 	}
 	return out
 }

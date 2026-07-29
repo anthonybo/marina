@@ -337,9 +337,19 @@ func (m *Monitor) tick(ctx context.Context) {
 	for _, path := range selfPaths(m.selfSource) {
 		livePaths[path] = true
 	}
+	// "Did the thing I launched come up?" — any listener in the project answers
+	// that, whatever port it chose.
 	m.launcher.Settled(livePaths)
+
+	// "Is this project's server already up, so leave it out of the boatyard?" is a
+	// stricter question, and answering it with any listener at all is what removed
+	// the launch button from a project whose only listener was a check script.
+	serverPaths := runningPaths(serverLike(services))
+	for _, path := range selfPaths(m.selfSource) {
+		serverPaths[path] = true
+	}
 	projects, skipped := m.catalog.Projects(ctx)
-	ashore := ashoreFrom(projects, livePaths, m.launcher.Recent(),
+	ashore := ashoreFrom(projects, serverPaths, m.launcher.Recent(),
 		m.store.LastSeenPath, m.store.PortsForPath, occupiedPorts(services))
 
 	snap := Snapshot{
