@@ -41,11 +41,6 @@ func TestValidateRootRejectsWhatCannotBeScanned(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	nested := filepath.Join(dir, "nested")
-	if err := os.Mkdir(nested, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
 	for _, tc := range []struct {
 		name     string
 		input    string
@@ -56,8 +51,6 @@ func TestValidateRootRejectsWhatCannotBeScanned(t *testing.T) {
 		{"missing", filepath.Join(dir, "nope"), nil},
 		{"a file", file, nil},
 		{"already scanned", dir, []string{dir}},
-		{"inside an existing root", nested, []string{dir}},
-		{"contains an existing root", dir, []string{nested}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := ValidateRoot(tc.input, tc.existing); err == nil {
@@ -230,5 +223,52 @@ func writeJSON(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Nesting a root inside another must be allowed, and must not list anything
+// twice. This is the ~/projects/draftingroom case: a directory of directories of
+// projects is invisible, because it is not itself a project and the scan of its
+// parent never looks inside it. Adding it is the only fix, and the panel's own
+// hint tells you to — so refusing it made the advice impossible to follow.
+func TestNestedRootsAreAllowedAndDoNotDuplicate(t *testing.T) {
+	outer := t.TempDir()
+	// A real project directly under the outer root.
+	mustProject(t, filepath.Join(outer, "marina"))
+	// A container of projects, itself not a project — invisible to a one-level scan.
+	inner := mkdir(t, filepath.Join(outer, "draftingroom"))
+	mustProject(t, filepath.Join(inner, "bluepencil"))
+	mustProject(t, filepath.Join(inner, "leadflow"))
+
+	c := New([]string{outer}, time.Hour)
+	got := names(c.Projects(t.Context()))
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"marina"}) {
+		t.Fatalf("scanning only the outer root found %v, want just [marina] — the container's projects are a level too deep", got)
+	}
+
+	// The fix must be permitted.
+	if _, err := ValidateRoot(inner, []string{outer}); err != nil {
+		t.Fatalf("adding the container was refused: %v", err)
+	}
+
+	c.SetRoots([]string{outer, inner})
+	got = names(c.Projects(t.Context()))
+	slices.Sort(got)
+	want := []string{"bluepencil", "leadflow", "marina"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("with both roots: %v, want %v", got, want)
+	}
+
+	// Each project exactly once: one level deep means the two scans cover
+	// disjoint sets, whatever the nesting.
+	seen := map[string]int{}
+	for _, n := range got {
+		seen[n]++
+	}
+	for name, n := range seen {
+		if n != 1 {
+			t.Fatalf("%s listed %d times; nested roots must not duplicate", name, n)
+		}
 	}
 }

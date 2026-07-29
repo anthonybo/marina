@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/anthonybo/marina/daemon/internal/identify"
 )
@@ -109,17 +108,16 @@ func ValidateRoot(input string, existing []string) (string, error) {
 		return "", fmt.Errorf("%s is already being scanned", path)
 	}
 
-	// A root inside another root would list the same projects twice, and one
-	// holding an existing root would make that root redundant. Both are worth
-	// saying out loud rather than quietly accepting.
-	for _, other := range existing {
-		if isInside(path, other) {
-			return "", fmt.Errorf("%s is already covered by %s", path, other)
-		}
-		if isInside(other, path) {
-			return "", fmt.Errorf("%s contains %s, which is already scanned — remove that one first", path, other)
-		}
-	}
+	// Nesting is deliberately allowed. It looks like it would list things twice and
+	// it cannot: the scan reads exactly one level, so a root lists its own children
+	// and nothing deeper, and a directory has one parent — so no project can be a
+	// direct child of two different roots.
+	//
+	// Refusing it was a real bug. A directory of directories of projects
+	// (~/projects/draftingroom, holding eight repos) is invisible: it is not itself
+	// a project, so the scan of ~/projects drops it and never looks inside. Adding
+	// it is the fix, and "already covered by ~/projects" made the fix impossible
+	// while the panel's own hint told you to do it.
 
 	// The important one, and the least obvious. Scanned directories are also the
 	// boundaries the identifier stops its upward walk at, so one placed at or
@@ -158,13 +156,4 @@ func enclosingProject(path string) (string, bool) {
 		}
 		cur = parent
 	}
-}
-
-// isInside reports whether child is below parent.
-func isInside(child, parent string) bool {
-	rel, err := filepath.Rel(parent, child)
-	if err != nil {
-		return false
-	}
-	return rel != "." && !filepath.IsAbs(rel) && !strings.HasPrefix(rel, "..")
 }
