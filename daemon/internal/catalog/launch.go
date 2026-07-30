@@ -183,8 +183,17 @@ func (l *Launcher) watch(path, name string, cmd *exec.Cmd, logPath string) {
 	waitErr := cmd.Wait()
 
 	code := -1
+	// Whether a signal ended it has to be asked directly. ExitCode() returns -1
+	// when the process was signalled rather than exiting, so the number alone
+	// cannot tell "killed" from "failed to start" — and the two are opposites.
+	// The 128+N form arrives separately, when the shell survives long enough to
+	// report a signalled child.
+	signaled := false
 	if cmd.ProcessState != nil {
 		code = cmd.ProcessState.ExitCode()
+		if ws, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok {
+			signaled = ws.Signaled()
+		}
 	}
 
 	l.mu.Lock()
@@ -201,6 +210,14 @@ func (l *Launcher) watch(path, name string, cmd *exec.Cmd, logPath string) {
 	switch {
 	case launch.Stopped:
 		// We asked it to stop. Not a failure, however it exited.
+	case signaled || signalExit(code):
+		// Something asked it to stop — just not through Marina. Ctrl+C in the
+		// terminal that owns it, a plain `kill`, the machine sleeping, or a stop
+		// from the dashboard that went down a path which could not mark the record.
+		// A launch does not "fail" by being told to quit, and the label is sticky
+		// until the next launch, so getting this wrong leaves a working project
+		// reading "failed" for days.
+		launch.Stopped = true
 	case code == 0 && ranFor >= failFast:
 		// Ran for a while, then stopped cleanly. Not a launch failure.
 	case code == 0:
@@ -298,6 +315,43 @@ func (l *Launcher) Settled(runningPaths map[string]bool) {
 			delete(l.recent, path)
 		}
 	}
+}
+
+// signalExit reports whether a status came from a signal rather than the program
+// deciding to exit.
+//
+// A shell reports 128+N for a child killed by signal N, and Marina runs every
+// command through /bin/sh, so that is one form which arrives here: 130 SIGINT
+// (Ctrl+C), 143 SIGTERM (a stop, or a system shutdown), 137 SIGKILL (Marina's own
+// escalation after eight seconds, or the OOM killer).
+//
+// It is not the only form. When the shell itself is signalled — which is what
+// killing the process group does — the status carries the signal rather than a
+// code, and ExitCode() reports -1. The caller must consult WaitStatus.Signaled()
+// for that case; this function cannot see it.
+func signalExit(code int) bool { return code > 128 && code <= 128+64 }
+
+// MarkStopped records that a project's exit was asked for, for callers that
+// terminate a process tree themselves rather than going through Stop.
+//
+// The dashboard can stop an app by port, and that path signals the process group
+// directly — it has to, because it also serves apps Marina never launched. Without
+// this, a Marina-launched app stopped that way looked like it had crashed.
+// Ordering matters: mark before signalling, because the watcher may see the exit
+// first.
+func (l *Launcher) MarkStopped(path string) bool {
+	if path == "" {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	launch, ok := l.recent[filepath.Clean(path)]
+	if !ok {
+		return false
+	}
+	launch.Stopped = true
+	launch.Error = ""
+	return true
 }
 
 // describeExit turns an exit status into something actionable, reading the tail of

@@ -419,6 +419,10 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	if pgid, err := syscall.Getpgid(target.PID); err == nil && projectDir != "" {
 		ok, why := procs.GroupBelongsTo(r.Context(), pgid, projectDir)
 		if ok {
+			// Tell the launcher first if this is something it started. SIGTERM shows
+			// up as exit 143, and without this the watcher reads a deliberate stop as
+			// a crash — a label that then sticks until the next launch.
+			s.launcher.MarkStopped(projectDir)
 			result := procs.TerminateGroup(r.Context(), pgid, target.PID)
 			s.log.Info("api: stopped group", "port", target.Port, "project", target.Project,
 				"group", pgid, "forced", result.Forced, "exited", result.Exited)
@@ -444,6 +448,9 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	// Same reasoning as the group stop above: mark before signalling.
+	s.launcher.MarkStopped(projectDir)
 
 	results := make([]procs.Result, 0, len(targets))
 	for _, svc := range targets {
