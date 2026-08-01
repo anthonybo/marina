@@ -38,6 +38,11 @@ type Info struct {
 	// Host is the mDNS name, which survives a DHCP change. Empty if the machine
 	// has no .local name.
 	Host string `json:"host,omitempty"`
+	// Alias is a shorter name Marina publishes for this machine, when it does.
+	// Separate from Host because Host is the machine's own name and this is not:
+	// the UI shows whichever is easier to type, and the difference matters if one
+	// of them stops resolving.
+	Alias string `json:"alias,omitempty"`
 	// Others are the remaining addresses, for a machine on Wi-Fi and Ethernet at
 	// once. Ordered the same way as IP was chosen.
 	Others []Addr `json:"others,omitempty"`

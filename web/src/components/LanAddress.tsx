@@ -52,6 +52,10 @@ export function LanAddress({
     )
   }
 
+  // Prefer the short published name when there is one: it is the same on every
+  // machine and short enough to type on a phone. It is only ever set once it
+  // actually resolves, so showing it cannot send anyone to a dead name.
+  const name = net.alias ?? net.host
   const others = net.others ?? []
   // An address alone is half an answer. A server bound to loopback will never
   // answer here however correct the address is — Vite binds IPv6 loopback by
@@ -60,7 +64,8 @@ export function LanAddress({
   const detail = [
     `Other devices on this network reach this Mac at ${net.ip}${net.iface ? ` (${net.iface})` : ''}.`,
     `Append the port: http://${net.ip}:3000`,
-    net.host && `Or use ${net.host}, which keeps working when the address changes.`,
+    name && `Or use ${name}, which keeps working when the address changes.`,
+    net.alias && net.host && `This Mac's own name, ${net.host}, works too.`,
     others.length > 0 &&
       `Also reachable at ${others.map((o) => `${o.ip} (${o.iface})`).join(', ')}.`,
     apps > 0 &&
@@ -87,15 +92,15 @@ export function LanAddress({
       </button>
 
       {/* The durable alternative, quiet enough not to compete with the address. */}
-      {net.host && (
+      {name && (
         <button
           type="button"
-          onClick={() => copy(net.host!, 'host')}
-          title={`Copy ${net.host} — this name keeps working after the router hands out a new address.`}
-          aria-label={`Copy this Mac's network name, ${net.host}`}
+          onClick={() => copy(name, 'host')}
+          title={`Copy ${name} — this name keeps working after the router hands out a new address.`}
+          aria-label={`Copy this Mac's network name, ${name}`}
           className="max-w-[10rem] truncate rounded-full px-1.5 py-0.5 font-mono text-[0.62rem] text-foam-400 transition-colors hover:bg-harbor-800 hover:text-foam-100"
         >
-          {copied === 'host' ? 'copied' : net.host.replace(/\.local$/, '')}
+          {copied === 'host' ? 'copied' : name.replace(/\.local$/, '')}
         </button>
       )}
     </span>

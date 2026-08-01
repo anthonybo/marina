@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -21,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -29,6 +31,7 @@ import (
 	"github.com/anthonybo/marina/daemon/internal/catalog"
 	"github.com/anthonybo/marina/daemon/internal/health"
 	"github.com/anthonybo/marina/daemon/internal/logs"
+	"github.com/anthonybo/marina/daemon/internal/mdns"
 	"github.com/anthonybo/marina/daemon/internal/monitor"
 	"github.com/anthonybo/marina/daemon/internal/probe"
 	"github.com/anthonybo/marina/daemon/internal/store"
@@ -84,6 +87,7 @@ func runServe() int {
 		dbName      = flag.String("db", envOr("MARINA_DB", "marina"), "database name to create if missing")
 		healthEvery = flag.Duration("health-interval", envDuration("MARINA_HEALTH_INTERVAL", 3*time.Second), "how often to sample per-app CPU and memory")
 		noProbe     = flag.String("no-probe", envOr("MARINA_NO_PROBE", ""), "ports never to contact over HTTP, e.g. \"3001-3013,9229\"")
+		mdnsName    = flag.String("mdns-name", envOr("MARINA_MDNS_NAME", "marina"), "short Bonjour name to publish for this machine, e.g. \"marina\" for marina.local; empty to publish nothing")
 		roots       = flag.String("roots", envOr("MARINA_ROOTS", defaultRoots()), "comma-separated directories to scan for projects you could start")
 		verbose     = flag.Bool("v", false, "verbose logging")
 	)
@@ -144,6 +148,29 @@ func runServe() int {
 
 	mon := monitor.New(st, cat, launcher, sampler, *interval, version, excluded, sourceDir, log)
 	go mon.Run(ctx)
+
+	// A short name for this machine, so a dev server is reachable at
+	// marina.local:3000 from a phone instead of at an address that changes with the
+	// lease. Driven from the snapshot stream rather than its own timer: the address
+	// is part of the change signature, so a new lease already produces a snapshot,
+	// and there is no reason for two things to be watching the network.
+	if name := strings.TrimSpace(*mdnsName); name != "" {
+		publisher := mdns.New(name, portOf(*addr), log)
+		go publisher.Run(ctx)
+		mon.SetAliasSource(func() (string, bool) {
+			s := publisher.Status()
+			return s.Name, s.Active
+		})
+
+		updates, unsubscribe := mon.Subscribe()
+		defer unsubscribe()
+		publisher.Point(mon.Snapshot().Net.IP)
+		go func() {
+			for snap := range updates {
+				publisher.Point(snap.Net.IP)
+			}
+		}()
+	}
 
 	srv := api.New(mon, st, launcher, logStore, sampler, rootStore, webui.FS(), webui.Placeholder(), *addr, log)
 	if err := srv.ListenAndServe(ctx); err != nil {
@@ -572,6 +599,21 @@ func defaultRoots() string {
 		return ""
 	}
 	return filepath.Join(home, "projects")
+}
+
+// portOf pulls the port out of a listen address, for the Bonjour registration.
+// dns-sd insists on a port even when the record we want is the host one, so a bad
+// parse is harmless rather than fatal.
+func portOf(addr string) int {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // stateDir is where Marina keeps files it generates, alongside its binary.

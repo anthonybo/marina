@@ -115,6 +115,19 @@ type Monitor struct {
 
 	// healthLogged keeps the not-ready notice to once rather than every sweep.
 	healthLogged bool
+
+	// alias reports a shorter published name for this machine, and whether it is
+	// resolving yet. A function rather than a dependency: the monitor has no
+	// business knowing how a name gets published.
+	alias func() (string, bool)
+}
+
+// SetAliasSource supplies the shorter network name to report, if something is
+// publishing one.
+func (m *Monitor) SetAliasSource(fn func() (string, bool)) {
+	m.mu.Lock()
+	m.alias = fn
+	m.mu.Unlock()
 }
 
 // New builds a Monitor. Nothing starts until Run is called.
@@ -209,6 +222,22 @@ func (m *Monitor) SetRoots(ctx context.Context, roots []string) []string {
 		m.tick(ctx)
 	}
 	return m.catalog.Roots()
+}
+
+// netInfo is the addressing picture, with a published alias folded in when one is
+// resolving. An alias that has not been confirmed is deliberately omitted: showing
+// a name that does not resolve yet is worse than showing the long one that does.
+func (m *Monitor) netInfo() netinfo.Info {
+	info := m.netw.Info()
+	m.mu.RLock()
+	alias := m.alias
+	m.mu.RUnlock()
+	if alias != nil {
+		if name, ok := alias(); ok {
+			info.Alias = name
+		}
+	}
+	return info
 }
 
 // Roots reports the directories currently being scanned.
@@ -370,7 +399,7 @@ func (m *Monitor) tick(ctx context.Context) {
 		ScanMS:        time.Since(start).Milliseconds(),
 		Ashore:        ashore,
 		AshoreSkipped: skipped,
-		Net:           m.netw.Info(),
+		Net:           m.netInfo(),
 	}
 
 	sig := signature(services, ashore, snap.Store, snap.Net)
@@ -557,6 +586,7 @@ func signature(services []Service, ashore []Ashore, health store.Health, net net
 	write(net.IP)
 	write(net.Iface)
 	write(net.Host)
+	write(net.Alias)
 	for _, a := range net.Others {
 		write(a.IP)
 		write(a.Iface)

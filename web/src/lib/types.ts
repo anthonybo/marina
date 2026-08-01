@@ -125,6 +125,8 @@ export interface NetInfo {
   iface?: string
   /** The mDNS name, which survives the router handing out a new address. */
   host?: string
+  /** A shorter name Marina publishes, present only once it actually resolves. */
+  alias?: string
   /** Further addresses, for a machine on Wi-Fi and Ethernet at once. */
   others?: NetAddr[]
 }

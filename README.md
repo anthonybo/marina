@@ -561,6 +561,39 @@ bash scripts/install.sh --no-probe 3001-3013
 Excluded ports are never contacted at all. They still appear, still show uptime,
 and are marked `not probed`; you lose only the page title and the Open button.
 
+## Reaching it from another device
+
+The header carries the address other machines on your network use, because a dev
+server you started here is often something you want to open on a phone, and the
+router changes that address whenever the lease renews. Click it to copy.
+
+Beside it is a short Bonjour name Marina publishes for this machine — `marina.local`
+by default — so the URL is the same everywhere and only the port varies:
+
+```
+http://marina.local:3000
+```
+
+It is an *additional* name; the Mac keeps its own for AirDrop and Screen Sharing.
+Choose another with `--mdns-name`, or publish nothing with `--mdns-name ""`. Two
+machines cannot publish the same name on one network, so give the second one a
+different one. The name is withdrawn when the daemon stops, so it never points at
+a machine that has gone.
+
+Two things worth knowing, because both fail quietly:
+
+- **A server bound to loopback will not answer**, however right the address is.
+  Vite and Astro bind localhost by default and need `--host`. The address hint
+  says how many of your running apps actually listen on all interfaces.
+- **Vite blocks unfamiliar host names.** Raw IPv4 is always allowed, but a
+  `.local` name returns "Blocked request" until you allow it. One entry covers
+  every Bonjour name, this Mac's and any alias:
+
+  ```js
+  // vite.config.js
+  server: { host: true, allowedHosts: ['.local'] }
+  ```
+
 ## Live detection
 
 The daemon sweeps every 2 seconds and pushes changes to the browser over
