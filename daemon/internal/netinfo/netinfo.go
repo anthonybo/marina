@@ -163,15 +163,25 @@ func usable(flags net.Flags, ip net.IP) bool {
 	return !v4.IsLinkLocalUnicast() && !v4.IsUnspecified()
 }
 
+// routeProbe is the address the route lookup below asks about.
+//
+// 192.0.2.1 is RFC 5737 TEST-NET-1: reserved for documentation and guaranteed
+// never to be assigned to anyone. Nothing is ever sent to it, but the usual
+// choice for this trick is a public DNS resolver, and hard-coding somebody else's
+// server — even as a routing question that never leaves the machine — is not
+// something this should ship with.
+const routeProbe = "192.0.2.1:80"
+
 // preferredIP asks the routing table which address outbound traffic would use, by
 // dialing a UDP socket nowhere. No packet is sent — connect() on a datagram
-// socket only fixes the local end — so this is a routing lookup, not traffic.
+// socket only fixes the local end — so this is a routing lookup, not traffic. It
+// works with no internet at all, as long as a default route exists.
 //
 // Returns "" when there is no route, which is the normal answer when offline.
 func preferredIP() string {
 	// A short timeout because this sits behind a cache with a TTL, and a slow
 	// answer is worth less than a fast miss.
-	conn, err := net.DialTimeout("udp4", "8.8.8.8:80", 300*time.Millisecond)
+	conn, err := net.DialTimeout("udp4", routeProbe, 300*time.Millisecond)
 	if err != nil {
 		return ""
 	}

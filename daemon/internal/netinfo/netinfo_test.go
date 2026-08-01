@@ -14,11 +14,11 @@ func TestUsableRejectsAddressesNobodyCanReach(t *testing.T) {
 		ip    string
 		want  bool
 	}{
-		{"a LAN address", up, "192.168.0.79", true},
-		{"a wired 10.x address", up, "10.0.1.20", true},
+		{"a LAN address", up, "192.168.1.10", true},
+		{"a wired 10.x address", up, "10.20.30.40", true},
 		{"a public address", up, "203.0.113.5", true},
 		{"loopback", up | net.FlagLoopback, "127.0.0.1", false},
-		{"an interface that is down", 0, "192.168.0.79", false},
+		{"an interface that is down", 0, "192.168.1.10", false},
 		{"a VPN tunnel", up | net.FlagPointToPoint, "10.8.0.2", false},
 		{"DHCP having failed", up, "169.254.1.1", false},
 		{"IPv6", up, "fe80::1", false},
@@ -34,12 +34,12 @@ func TestUsableRejectsAddressesNobodyCanReach(t *testing.T) {
 
 func TestTheRoutingTablesChoiceWins(t *testing.T) {
 	addrs := []Addr{
-		{IP: "192.168.0.79", Iface: "en0"},
-		{IP: "10.0.1.20", Iface: "en1"},
+		{IP: "192.168.1.10", Iface: "en0"},
+		{IP: "10.20.30.40", Iface: "en1"},
 	}
-	sortAddrs(addrs, "10.0.1.20")
-	if addrs[0].IP != "10.0.1.20" {
-		t.Fatalf("first = %s, want the routed address 10.0.1.20", addrs[0].IP)
+	sortAddrs(addrs, "10.20.30.40")
+	if addrs[0].IP != "10.20.30.40" {
+		t.Fatalf("first = %s, want the routed address 10.20.30.40", addrs[0].IP)
 	}
 }
 
@@ -48,11 +48,11 @@ func TestTheRoutingTablesChoiceWins(t *testing.T) {
 func TestFallbackOrderingWhenTheRouteIsNotOurs(t *testing.T) {
 	addrs := []Addr{
 		{IP: "172.17.0.1", Iface: "docker0"},
-		{IP: "192.168.0.79", Iface: "en0"},
-		{IP: "192.168.2.1", Iface: "bridge100"},
+		{IP: "192.168.1.10", Iface: "en0"},
+		{IP: "192.168.9.1", Iface: "bridge100"},
 	}
 	sortAddrs(addrs, "10.8.0.2") // the VPN's address: not in the list
-	want := []string{"192.168.0.79", "192.168.2.1", "172.17.0.1"}
+	want := []string{"192.168.1.10", "192.168.9.1", "172.17.0.1"}
 	for i, ip := range want {
 		if addrs[i].IP != ip {
 			t.Fatalf("position %d = %s, want %s (order: %+v)", i, addrs[i].IP, ip, addrs)
