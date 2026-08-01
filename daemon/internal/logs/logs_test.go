@@ -38,7 +38,7 @@ func TestResolveRejectsTraversal(t *testing.T) {
 		}
 	}
 
-	good := []string{"leadflow", "iptv-epg-matcher", "my_app", "app.v2", "A1"}
+	good := []string{"app-two", "media-tool", "my_app", "app.v2", "A1"}
 	for _, name := range good {
 		if _, err := s.resolve(name); err != nil {
 			t.Errorf("resolve(%q) rejected a legitimate project name: %v", name, err)

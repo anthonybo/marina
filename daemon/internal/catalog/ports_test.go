@@ -19,9 +19,9 @@ func portMap(t *testing.T, dir string, scripts map[string]string, framework stri
 // machine: a vite config with an env fallback, and a dotenv file.
 func TestDetectPortsFromConfigFiles(t *testing.T) {
 	dir := t.TempDir()
-	// borrowyard's actual shape: `port: process.env.PORT || 5177`.
+	// sample-app's actual shape: `port: process.env.PORT || 5177`.
 	write(t, dir, "vite.config.ts", "export default {\n  server: { port: process.env.PORT || 5177 },\n}\n")
-	// snapjar's actual shape.
+	// solo-app's actual shape.
 	write(t, dir, ".env", "PORT=3001\nDATABASE_PORT=5432\n")
 
 	got := portMap(t, dir, nil, "Vite")
@@ -42,7 +42,7 @@ func TestDetectPortsFromConfigFiles(t *testing.T) {
 	}
 }
 
-// TestDetectPortsFollowsLocalScripts covers stormwire's and leadflow's shape,
+// TestDetectPortsFollowsLocalScripts covers webapp's and app-two's shape,
 // where `dev` is `bash scripts/dev.sh` and the ports live in that script.
 func TestDetectPortsFollowsLocalScripts(t *testing.T) {
 	dir := t.TempDir()

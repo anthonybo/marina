@@ -9,12 +9,12 @@ one click.
   4 apps · 13 services · 9 infra · 7 system · 21 speak HTTP · swept in 150ms
 
   APPS
-    :3000   iptv-epg-matcher → frontend      Vite     up 1d 17h
-    :5001     └ server.js          backend   Node     up 23h 42m
-  ★ :5173   StormWire UI → frontend          Vite     up 1d 22h
-    :3001     └ index.ts           backend   tsx      up 1d 22h
-    :3002     └ hlsProxyServer.js  backend   tsx      up 1d 22h
-    :3004     └ aircraftWorker.js  backend   tsx      up 1d 22h
+    :3000   media-tool → frontend       Vite    up 1d 17h
+    :5001     └ server.js       backend  Node    up 23h 42m
+  ★ :5173   Webapp UI → frontend        Vite    up 1d 22h
+    :3001     └ index.ts        backend  tsx     up 1d 22h
+    :3002     └ apiServer.js    backend  tsx     up 1d 22h
+    :3004     └ queueWorker.js  backend  tsx     up 1d 22h
 ```
 
 Marina runs as a login-time daemon plus a menu bar agent, so it is simply always
@@ -142,8 +142,8 @@ dashboard. Thirteen workers started from one package all look identical until yo
 surface the entry script:
 
 ```
-:3004   aircraftWorker.js     :3008   earthquakeWorker.js
-:3005   camerasWorker.js      :3009   windWorker.js
+:3004   queueWorker.js    :3008   statsWorker.js
+:3005   imageWorker.js    :3009   feedWorker.js
 ```
 
 Services that aren't yours are separated out rather than hidden: Postgres, Redis,
@@ -164,10 +164,10 @@ than having a hierarchy invented for it.
 The result, on this machine: **17 app ports become 4 apps and 13 services.**
 
 ```
-★ :5173   StormWire UI → frontend      Vite     up 1d 22h
-  :3001     └ index.ts                 tsx      up 1d 22h
-  :3002     └ hlsProxyServer.js        tsx      up 1d 22h
-  :3004     └ aircraftWorker.js        tsx      up 1d 22h
+★ :5173   Webapp UI → frontend    Vite    up 1d 22h
+  :3001     └ index.ts            tsx     up 1d 22h
+  :3002     └ apiServer.js        tsx     up 1d 22h
+  :3004     └ queueWorker.js      tsx     up 1d 22h
   …
 ```
 
@@ -236,8 +236,8 @@ number, because they have no port yet.
 
 ```bash
 marina ashore              # list what could be started
-marina start leadflow      # start it (unique prefixes work)
-marina stop leadflow       # and stop it again
+marina start app-two      # start it (unique prefixes work)
+marina stop app-two       # and stop it again
 ```
 
 ### Which port will it take?
@@ -253,10 +253,10 @@ framework's default:
 
 | Source | How it's found | Example here |
 | --- | --- | --- |
-| **history** | Marina watched that project use that port | `headroom :8931`, `leadflow :4444` |
-| **config** | any `.env*` or `*.config.*` file in the project | `seedrix :3000`, `snapjar :3001` |
-| **script** | a `--port`/`PORT=` in the start command, or in a script it runs | `flamescope :8000` |
-| **default** | the framework's usual port — a guess, and rendered dimmer | `emergencywave :3000` |
+| **history** | Marina watched that project use that port | `audio-app :8931`, `app-two :4444` |
+| **config** | any `.env*` or `*.config.*` file in the project | `app-three :3000`, `solo-app :3001` |
+| **script** | a `--port`/`PORT=` in the start command, or in a script it runs | `profiler-ui :8000` |
+| **default** | the framework's usual port — a guess, and rendered dimmer | `alerts-app :3000` |
 
 Discovery is by pattern, not by a list of filenames: config files are globbed
 (`*.config.ts`, `.env.staging`, anything), and a command like `bash scripts/dev.sh`
@@ -311,7 +311,7 @@ toolchain directories rather than refusing to try.
 A launch that dies is reported, with the reason, next to the project:
 
 ```
-✗ stormwire   sh: pnpm: command not found — that tool is not on the PATH Marina used   [view log]
+✗ webapp   sh: pnpm: command not found — that tool is not on the PATH Marina used   [view log]
 ```
 
 The launcher watches the process it started. An exit inside 20 seconds means it
@@ -327,8 +327,8 @@ or `marina stop <name>`. Stopping puts it back in **Ashore**, so start and stop 
 the same two clicks in the same place.
 
 ```bash
-marina stop stormwire
-○ stopped StormWire UI — 13 processes ended (2 needed SIGKILL)
+marina stop webapp
+○ stopped Webapp UI — 13 processes ended (2 needed SIGKILL)
 ```
 
 This is the only destructive thing Marina does, so it is fenced in:
@@ -345,7 +345,7 @@ This is the only destructive thing Marina does, so it is fenced in:
   not create, every process in the group must be working inside that project's
   directory. If anything else is in there, it falls back to individual processes.
 
-  This matters because an app is a tree. quadcitygo, started from a terminal, was
+  This matters because an app is a tree. mono-app, started from a terminal, was
   twelve processes — `npm run dev` → `concurrently` → backend and frontend chains —
   all in one group. Killing only the listener would have left the supervisor to
   restart it. Measured after a group stop: all twelve gone, and the three live
@@ -453,9 +453,9 @@ real interval, so "14% of one core over the last 3 seconds" means exactly that.
 **Cost is attributed by process group, not by process tree.** A dev server's cost
 lives in its children, so a single process badly understates it — but a tree walk
 overstates it, because anything Marina launched is a *descendant of Marina*. The
-first version credited Marina with stormwire's 13 processes and 2.4GB, counting it
+first version credited Marina with webapp's 13 processes and 2.4GB, counting it
 twice. A process group is what job control calls one job, so grouping by it gives
-StormWire its 19 processes and leaves Marina with its own 1.
+Webapp its 19 processes and leaves Marina with its own 1.
 
 **The scale is cores, not a share of the machine.** One core fully busy is ordinary
 for a dev server mid-rebuild; three cores pinned is what actually makes a laptop

@@ -406,7 +406,7 @@ const Boat = memo(function Boat({
   const sinkPx = Math.min(3, (cpu / 400) * 3)
 
   // The project name is the identity and must always appear. This used to prefer
-  // `entry`, so the iptv backend rendered as "server.js" — a filename dozens of
+  // `entry`, so the media backend rendered as "server.js" — a filename dozens of
   // projects share — and the project name was demoted to the line below, which then
   // lost it to the uptime because that line was `up ?? detail`. Net effect: a boat
   // labelled with nothing you could act on.

@@ -26,10 +26,10 @@ func app(port int, project, subpath, framework, title string) Service {
 // project serving a UI plus a dozen workers must read as one app, not thirteen.
 func TestAssignRolesFindsTheFrontDoor(t *testing.T) {
 	services := []Service{
-		app(3001, "stormwire", "packages/backend", "tsx", ""),
-		app(3002, "stormwire", "packages/backend", "tsx", ""),
-		app(3003, "stormwire", "packages/backend", "tsx", ""),
-		app(5173, "stormwire", "packages/frontend", "Vite", "StormWire — Live Severe Weather"),
+		app(3001, "webapp", "packages/backend", "tsx", ""),
+		app(3002, "webapp", "packages/backend", "tsx", ""),
+		app(3003, "webapp", "packages/backend", "tsx", ""),
+		app(5173, "webapp", "packages/frontend", "Vite", "Webapp — Dashboard"),
 	}
 	assignRoles(services)
 
@@ -87,8 +87,8 @@ func TestAssignRolesLeavesPeersAlone(t *testing.T) {
 // of that worker; prominence is a separate concern from role.
 func TestAssignRolesIgnoresPins(t *testing.T) {
 	services := []Service{
-		app(3001, "stormwire", "packages/backend", "tsx", ""),
-		app(5173, "stormwire", "packages/frontend", "Vite", "StormWire"),
+		app(3001, "webapp", "packages/backend", "tsx", ""),
+		app(5173, "webapp", "packages/frontend", "Vite", "Webapp"),
 	}
 	services[0].Meta = store.Meta{Pinned: true}
 	assignRoles(services)
@@ -127,7 +127,7 @@ func TestAssignRolesIgnoresOtherKinds(t *testing.T) {
 // TestAssignRolesSingletonStaysSolo — a project with one port has nothing to
 // collapse.
 func TestAssignRolesSingletonStaysSolo(t *testing.T) {
-	services := []Service{app(3000, "snapjar", "", "Vite", "Snapjar")}
+	services := []Service{app(3000, "solo-app", "", "Vite", "solo-app")}
 	assignRoles(services)
 	if services[0].Role != RoleSolo {
 		t.Errorf("role = %q, want %q", services[0].Role, RoleSolo)
@@ -158,9 +158,9 @@ func TestIsUIPath(t *testing.T) {
 // views depend on.
 func TestSortServicesKeepsServicesUnderTheirPrimary(t *testing.T) {
 	services := []Service{
-		app(3002, "stormwire", "packages/backend", "tsx", ""),
-		app(5173, "stormwire", "packages/frontend", "Vite", "StormWire"),
-		app(3001, "stormwire", "packages/backend", "tsx", ""),
+		app(3002, "webapp", "packages/backend", "tsx", ""),
+		app(5173, "webapp", "packages/frontend", "Vite", "Webapp"),
+		app(3001, "webapp", "packages/backend", "tsx", ""),
 	}
 	assignRoles(services)
 	sortServices(services)

@@ -36,7 +36,7 @@ interface BerthProps {
 function lines(s: Service, grouped: boolean): { primary: string; secondary: string } {
   const named = Boolean(s.meta.nickname)
 
-  // Under a project heading, "stormwire" on every row says nothing. The entry
+  // Under a project heading, "webapp" on every row says nothing. The entry
   // script is the real identity of a worker among thirteen siblings.
   if (grouped && !named && s.entry) {
     return { primary: s.entry, secondary: s.subpath || s.probe.title || s.proc }

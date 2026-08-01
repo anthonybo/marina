@@ -43,7 +43,7 @@ type Service struct {
 	Repo      string `json:"repo,omitempty"`
 	Framework string `json:"framework,omitempty"`
 	Language  string `json:"language,omitempty"`
-	// Entry is the launched script, e.g. "hlsProxyServer.js". It is what tells
+	// Entry is the launched script, e.g. "apiServer.js". It is what tells
 	// thirteen workers started from one package apart.
 	Entry     string `json:"entry,omitempty"`
 	Cmd       string `json:"cmd,omitempty"`
@@ -215,7 +215,7 @@ type dirInfo struct {
 	repo string
 	// projectDir is the outermost directory below a boundary that names itself a
 	// project. This is what fixes a repo-less monorepo: walking up from
-	// quadcitygo/frontend, the outer package.json says "quadcitygo", and that is
+	// mono-app/frontend, the outer package.json says "mono-app", and that is
 	// the project — "frontend" is a role inside it, never a project name.
 	projectDir string
 	// pkgDir is the *nearest* package.json, used only for dependency-based
@@ -405,7 +405,7 @@ func (r *Resolver) attributeProject(svc *Service, proc scan.Proc) {
 
 	// A monorepo package name is sometimes more informative than the folder, but
 	// only surface it when it genuinely adds something. A package called
-	// "iptv-epg-matcher-frontend" sitting in iptv-epg-matcher/frontend is pure
+	// "media-tool-frontend" sitting in media-tool/frontend is pure
 	// restatement, so it stays hidden.
 	if info.pkgName != "" && svc.Subpath != "" {
 		short := strings.TrimPrefix(info.pkgName, "@")

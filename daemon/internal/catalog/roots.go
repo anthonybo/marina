@@ -114,7 +114,7 @@ func ValidateRoot(input string, existing []string) (string, error) {
 	// direct child of two different roots.
 	//
 	// Refusing it was a real bug. A directory of directories of projects
-	// (~/projects/draftingroom, holding eight repos) is invisible: it is not itself
+	// (~/projects/workspace, holding eight repos) is invisible: it is not itself
 	// a project, so the scan of ~/projects drops it and never looks inside. Adding
 	// it is the fix, and "already covered by ~/projects" made the fix impossible
 	// while the panel's own hint told you to do it.

@@ -36,24 +36,24 @@ func resolve(t *testing.T, roots []string, cwd string) Service {
 
 // TestRepoLessMonorepoUsesOuterProject is the bug this test file exists for.
 //
-// quadcitygo has no .git, an outer package.json named "quadcitygo", and inner
+// mono-app has no .git, an outer package.json named "mono-app", and inner
 // frontend/backend packages. Resolving from the inner directory must yield the
-// project "quadcitygo" with subpath "frontend" — never the project "frontend",
+// project "mono-app" with subpath "frontend" — never the project "frontend",
 // which is a role inside a project and not a project name.
 func TestRepoLessMonorepoUsesOuterProject(t *testing.T) {
 	root := t.TempDir()
 	projects := mkdir(t, filepath.Join(root, "projects"))
 
-	writeFile(t, filepath.Join(projects, "quadcitygo", "package.json"),
-		`{"name":"quadcitygo","scripts":{"dev":"concurrently x y"}}`)
-	frontend := mkdir(t, filepath.Join(projects, "quadcitygo", "frontend"))
+	writeFile(t, filepath.Join(projects, "mono-app", "package.json"),
+		`{"name":"mono-app","scripts":{"dev":"concurrently x y"}}`)
+	frontend := mkdir(t, filepath.Join(projects, "mono-app", "frontend"))
 	writeFile(t, filepath.Join(frontend, "package.json"),
-		`{"name":"quadcitygo-frontend","dependencies":{"next":"^15"}}`)
+		`{"name":"mono-app-frontend","dependencies":{"next":"^15"}}`)
 
 	svc := resolve(t, []string{projects}, frontend)
 
-	if svc.Project != "quadcitygo" {
-		t.Errorf("Project = %q, want %q", svc.Project, "quadcitygo")
+	if svc.Project != "mono-app" {
+		t.Errorf("Project = %q, want %q", svc.Project, "mono-app")
 	}
 	if svc.Subpath != "frontend" {
 		t.Errorf("Subpath = %q, want %q", svc.Subpath, "frontend")
@@ -109,15 +109,15 @@ func TestGitRootWins(t *testing.T) {
 	projects := mkdir(t, filepath.Join(root, "projects"))
 	writeFile(t, filepath.Join(projects, "umbrella", "package.json"), `{"name":"umbrella"}`)
 
-	repo := mkdir(t, filepath.Join(projects, "umbrella", "stormwire"))
+	repo := mkdir(t, filepath.Join(projects, "umbrella", "webapp"))
 	writeFile(t, filepath.Join(repo, ".git", "HEAD"), "ref: refs/heads/main\n")
-	writeFile(t, filepath.Join(repo, "package.json"), `{"name":"stormwire"}`)
+	writeFile(t, filepath.Join(repo, "package.json"), `{"name":"webapp"}`)
 	pkg := mkdir(t, filepath.Join(repo, "packages", "backend"))
-	writeFile(t, filepath.Join(pkg, "package.json"), `{"name":"@stormwire/backend"}`)
+	writeFile(t, filepath.Join(pkg, "package.json"), `{"name":"@webapp/backend"}`)
 
 	svc := resolve(t, []string{projects}, pkg)
-	if svc.Project != "stormwire" {
-		t.Errorf("Project = %q, want %q", svc.Project, "stormwire")
+	if svc.Project != "webapp" {
+		t.Errorf("Project = %q, want %q", svc.Project, "webapp")
 	}
 	if svc.Subpath != "packages/backend" {
 		t.Errorf("Subpath = %q, want %q", svc.Subpath, "packages/backend")
@@ -128,12 +128,12 @@ func TestGitRootWins(t *testing.T) {
 func TestSingleLevelProject(t *testing.T) {
 	root := t.TempDir()
 	projects := mkdir(t, filepath.Join(root, "projects"))
-	app := mkdir(t, filepath.Join(projects, "snapjar"))
-	writeFile(t, filepath.Join(app, "package.json"), `{"name":"snapjar","dependencies":{"vite":"^7"}}`)
+	app := mkdir(t, filepath.Join(projects, "solo-app"))
+	writeFile(t, filepath.Join(app, "package.json"), `{"name":"solo-app","dependencies":{"vite":"^7"}}`)
 
 	svc := resolve(t, []string{projects}, app)
-	if svc.Project != "snapjar" {
-		t.Errorf("Project = %q, want %q", svc.Project, "snapjar")
+	if svc.Project != "solo-app" {
+		t.Errorf("Project = %q, want %q", svc.Project, "solo-app")
 	}
 	if svc.Subpath != "" {
 		t.Errorf("Subpath = %q, want empty for a top-level project", svc.Subpath)

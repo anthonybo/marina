@@ -180,11 +180,11 @@ func TestValidateRootRefusesProjectsAndTheirInsides(t *testing.T) {
 	projects := mkdir(t, filepath.Join(root, "projects"))
 
 	// A repo-less monorepo, and a git repo, each with an inner package.
-	mono := mkdir(t, filepath.Join(projects, "quadcitygo"))
-	writeJSON(t, filepath.Join(mono, "package.json"), `{"name":"quadcitygo"}`)
+	mono := mkdir(t, filepath.Join(projects, "mono-app"))
+	writeJSON(t, filepath.Join(mono, "package.json"), `{"name":"mono-app"}`)
 	monoInner := mkdir(t, filepath.Join(mono, "frontend"))
 
-	repo := mkdir(t, filepath.Join(projects, "stormwire"))
+	repo := mkdir(t, filepath.Join(projects, "webapp"))
 	mkdir(t, filepath.Join(repo, ".git"))
 	repoInner := mkdir(t, filepath.Join(repo, "packages", "frontend"))
 
@@ -227,7 +227,7 @@ func writeJSON(t *testing.T, path, body string) {
 }
 
 // Nesting a root inside another must be allowed, and must not list anything
-// twice. This is the ~/projects/draftingroom case: a directory of directories of
+// twice. This is the ~/projects/workspace case: a directory of directories of
 // projects is invisible, because it is not itself a project and the scan of its
 // parent never looks inside it. Adding it is the only fix, and the panel's own
 // hint tells you to — so refusing it made the advice impossible to follow.
@@ -236,9 +236,9 @@ func TestNestedRootsAreAllowedAndDoNotDuplicate(t *testing.T) {
 	// A real project directly under the outer root.
 	mustProject(t, filepath.Join(outer, "marina"))
 	// A container of projects, itself not a project — invisible to a one-level scan.
-	inner := mkdir(t, filepath.Join(outer, "draftingroom"))
-	mustProject(t, filepath.Join(inner, "bluepencil"))
-	mustProject(t, filepath.Join(inner, "leadflow"))
+	inner := mkdir(t, filepath.Join(outer, "workspace"))
+	mustProject(t, filepath.Join(inner, "app-one"))
+	mustProject(t, filepath.Join(inner, "app-two"))
 
 	c := New([]string{outer}, time.Hour)
 	got := names(c.Projects(t.Context()))
@@ -255,7 +255,7 @@ func TestNestedRootsAreAllowedAndDoNotDuplicate(t *testing.T) {
 	c.SetRoots([]string{outer, inner})
 	got = names(c.Projects(t.Context()))
 	slices.Sort(got)
-	want := []string{"bluepencil", "leadflow", "marina"}
+	want := []string{"app-one", "app-two", "marina"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("with both roots: %v, want %v", got, want)
 	}

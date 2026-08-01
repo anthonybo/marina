@@ -93,8 +93,8 @@ func TestDetectEntry(t *testing.T) {
 		},
 		{
 			name: "absolute worker path reduces to its basename",
-			cmd:  "/usr/bin/node --require /app/node_modules/tsx/dist/preflight.cjs --import file:///app/loader.mjs /app/packages/backend/src/hlsProxyServer.js",
-			want: "hlsProxyServer.js",
+			cmd:  "/usr/bin/node --require /app/node_modules/tsx/dist/preflight.cjs --import file:///app/loader.mjs /app/packages/backend/src/apiServer.js",
+			want: "apiServer.js",
 		},
 		{
 			name: "boolean flags do not swallow the entry",
