@@ -1,5 +1,6 @@
 import { forwardRef } from 'react'
-import type { Connection, Counts, StoreHealth } from '../lib/types'
+import type { Connection, Counts, NetInfo, StoreHealth } from '../lib/types'
+import { LanAddress } from './LanAddress'
 
 export type Filter = 'all' | 'app' | 'infra' | 'system'
 export type View = 'manifest' | 'harbor'
@@ -8,6 +9,11 @@ export type Pane = 'dashboard' | 'logs' | 'health'
 interface TopBarProps {
   counts: Counts | undefined
   connection: Connection
+  /** How other devices on the network reach this Mac. */
+  net: NetInfo | undefined
+  /** Running apps bound to all interfaces, and the total, for the address hint. */
+  netReachable: number
+  netApps: number
   store: StoreHealth | undefined
   scanMs: number | undefined
   query: string
@@ -26,6 +32,9 @@ export const TopBar = forwardRef<HTMLInputElement, TopBarProps>(function TopBar(
   {
     counts,
     connection,
+    net,
+    netReachable,
+    netApps,
     store,
     scanMs,
     query,
@@ -79,6 +88,9 @@ export const TopBar = forwardRef<HTMLInputElement, TopBarProps>(function TopBar(
         </div>
 
         <ConnectionPill connection={connection} counts={counts} />
+
+        {/* The address to type into another device on this network. */}
+        <LanAddress net={net} reachable={netReachable} apps={netApps} />
 
         <div className="flex-1" />
 

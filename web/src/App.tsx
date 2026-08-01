@@ -46,6 +46,15 @@ export default function App() {
     navigate(next === 'logs' ? '/logs' : next === 'health' ? '/health' : '/')
   const selectLog = (name: string | null) => navigate(name ? `/logs/${encodeURIComponent(name)}` : '/logs')
 
+  // How many running apps would actually answer on the LAN address. A server on
+  // loopback ignores it, so the header can say so instead of implying otherwise.
+  const lanReach = useMemo(() => {
+    const apps = (snapshot?.services ?? []).filter(
+      (s) => s.kind === 'app' || s.kind === 'unknown',
+    )
+    return { apps: apps.length, reachable: apps.filter((s) => s.wildcard).length }
+  }, [snapshot?.services])
+
   useEffect(() => {
     localStorage.setItem(VIEW_KEY, view)
   }, [view])
@@ -123,6 +132,9 @@ export default function App() {
         ref={searchRef}
         counts={snapshot?.counts}
         connection={connection}
+        net={snapshot?.net}
+        netReachable={lanReach.reachable}
+        netApps={lanReach.apps}
         store={snapshot?.store}
         scanMs={snapshot?.scanMs}
         query={query}

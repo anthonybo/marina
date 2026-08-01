@@ -111,6 +111,24 @@ export interface StoreHealth {
   pending: number
 }
 
+/** One address this machine answers on. */
+export interface NetAddr {
+  ip: string
+  /** en0 is Wi-Fi on most Macs; en1 or a bridge is usually wired. */
+  iface: string
+}
+
+/** How to reach this machine from another device on the same network. */
+export interface NetInfo {
+  /** Absent when no interface has an address — an unplugged cable, dropped Wi-Fi. */
+  ip?: string
+  iface?: string
+  /** The mDNS name, which survives the router handing out a new address. */
+  host?: string
+  /** Further addresses, for a machine on Wi-Fi and Ethernet at once. */
+  others?: NetAddr[]
+}
+
 export interface Snapshot {
   rev: number
   at: string
@@ -123,6 +141,7 @@ export interface Snapshot {
   ashore: Ashore[]
   /** Directories that look like projects but have no start command we know. */
   ashoreSkipped: number
+  net: NetInfo
 }
 
 export type Connection = 'connecting' | 'live' | 'lost'

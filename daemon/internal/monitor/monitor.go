@@ -19,6 +19,7 @@ import (
 	"github.com/anthonybo/marina/daemon/internal/catalog"
 	"github.com/anthonybo/marina/daemon/internal/health"
 	"github.com/anthonybo/marina/daemon/internal/identify"
+	"github.com/anthonybo/marina/daemon/internal/netinfo"
 	"github.com/anthonybo/marina/daemon/internal/probe"
 	"github.com/anthonybo/marina/daemon/internal/scan"
 	"github.com/anthonybo/marina/daemon/internal/store"
@@ -77,6 +78,11 @@ type Snapshot struct {
 	// AshoreSkipped counts project directories with no discoverable start
 	// command, reported so the roots don't look emptier than they are.
 	AshoreSkipped int `json:"ashoreSkipped"`
+	// Net is how to reach this machine from another one on the same network. On
+	// the snapshot rather than a polled endpoint because it belongs in the header
+	// at all times, and because a new DHCP lease should reach the page the moment
+	// it happens — an address you have to refresh to trust is not worth showing.
+	Net netinfo.Info `json:"net"`
 }
 
 // Monitor owns the poll loop and the subscriber set.
@@ -87,6 +93,7 @@ type Monitor struct {
 	catalog  *catalog.Catalog
 	launcher *catalog.Launcher
 	sampler  *health.Sampler
+	netw     *netinfo.Watcher
 	log      *slog.Logger
 
 	interval  time.Duration
@@ -129,6 +136,7 @@ func New(
 		catalog:    cat,
 		launcher:   launcher,
 		sampler:    sampler,
+		netw:       netinfo.NewWatcher(15 * time.Second),
 		log:        log,
 		interval:   interval,
 		version:    version,
@@ -362,9 +370,10 @@ func (m *Monitor) tick(ctx context.Context) {
 		ScanMS:        time.Since(start).Milliseconds(),
 		Ashore:        ashore,
 		AshoreSkipped: skipped,
+		Net:           m.netw.Info(),
 	}
 
-	sig := signature(services, ashore, snap.Store)
+	sig := signature(services, ashore, snap.Store, snap.Net)
 
 	m.mu.Lock()
 	changed := sig != m.sig
@@ -511,7 +520,7 @@ func seenFrom(services []Service) []store.Seen {
 
 // signature captures everything a client would render differently, and nothing
 // that merely ticks with the clock.
-func signature(services []Service, ashore []Ashore, health store.Health) string {
+func signature(services []Service, ashore []Ashore, health store.Health, net netinfo.Info) string {
 	h := sha256.New()
 	var buf [8]byte
 	write := func(s string) { h.Write([]byte(s)); h.Write([]byte{0}) }
@@ -542,6 +551,17 @@ func signature(services []Service, ashore []Ashore, health store.Health) string 
 			write("fresh")
 		}
 	}
+	// A new DHCP lease is exactly the kind of change worth pushing: the address in
+	// the header is being copied onto another machine, and a stale one sends
+	// someone to the wrong place.
+	write(net.IP)
+	write(net.Iface)
+	write(net.Host)
+	for _, a := range net.Others {
+		write(a.IP)
+		write(a.Iface)
+	}
+
 	// Changes to what is available to start must reach subscribers too, including
 	// a launch that has just failed — that is precisely the moment the UI needs to
 	// stop showing a spinner.
