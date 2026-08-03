@@ -46,6 +46,8 @@ interface Boat {
   framework: string
   /** Reachable from the device reading this page. */
   open: boolean
+  /** http or https — a TLS dev server linked as http just fails to connect. */
+  scheme: string
   /** Absent when the process's start time could not be read. */
   startedAt: number | undefined
   /** Set while the boat is leaving, so it animates out before being dropped. */
@@ -76,6 +78,7 @@ export function Dock({ services, net, now, local }: DockProps) {
           // Loopback-bound apps are unreachable from another device. On the
           // machine itself everything is reachable, so the rule relaxes.
           open: local || s.wildcard,
+          scheme: s.probe.scheme || 'http',
           startedAt: s.startedAt,
         }
       })
@@ -186,7 +189,7 @@ function Sky({ net, count }: { net: NetInfo | undefined; count: number }) {
  */
 function BoatCard({ boat, host, now }: { boat: Boat; host: string; now: number }) {
   const up = boat.startedAt ? uptime(boat.startedAt, now) : ''
-  const href = `http://${host}:${boat.port}`
+  const href = `${boat.scheme}://${host}:${boat.port}`
 
   const inner = (
     <>
