@@ -11,6 +11,10 @@
 node_modules/
 *.log
 
+# Personal backlog. Names real projects and is nobody else's business; kept local
+# on purpose so it can say what it needs to without being published.
+TODO.md
+
 .DS_Store
 .idea/
 .vscode/
