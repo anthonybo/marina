@@ -190,7 +190,7 @@ func runServe() int {
 	// mkcert. Without it the dashboard is plain HTTP and the browser says "Not
 	// Secure", which is noise on a local tool but noise people reasonably want gone.
 	if keeper, err := tlscert.Load(stateDir()); err == nil {
-		srv.UseTLS(keeper)
+		srv.UseTLS(keeper, stateDir())
 		log.Info("marina: serving https where available", "names", keeper.Names())
 	} else if !errors.Is(err, tlscert.ErrAbsent) {
 		log.Warn("marina: could not load the certificate", "err", err)

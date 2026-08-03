@@ -110,6 +110,15 @@ if [ -n "$PORT80" ]; then
          "${MDNS_NAME:-marina}.local" "$MDNS_HOST" localhost 127.0.0.1 ::1 >/dev/null 2>&1; then
       chmod 600 "$DEST/tls/key.pem"
       echo "  ✓ certificate for ${MDNS_NAME:-marina}.local, $MDNS_HOST (trusted by this Mac)"
+      # Other devices reject that certificate until they trust the CA behind it, so
+      # copy the CA's *public* half where the daemon can hand it out. The private
+      # key stays where mkcert put it — with it, anyone could mint a trusted
+      # certificate for any site on earth for whoever installed the CA.
+      if CAROOT="$(mkcert -CAROOT 2>/dev/null)" && [ -f "$CAROOT/rootCA.pem" ]; then
+        cp "$CAROOT/rootCA.pem" "$DEST/tls/ca.pem"
+        chmod 644 "$DEST/tls/ca.pem"
+        echo "    other devices: http://${MDNS_NAME:-marina}.local/trust to stop the warning"
+      fi
     else
       echo "  ! mkcert failed; the dashboard will be served over plain HTTP"
     fi

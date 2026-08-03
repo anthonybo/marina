@@ -50,6 +50,8 @@ type Server struct {
 
 	// tls holds the certificate for HTTPS listeners, nil when none is installed.
 	tls *tlscert.Keeper
+	// stateDir is where the CA copy lives, for the trust page.
+	stateDir string
 
 	// roots persists the scanned-directory list edited from the dashboard.
 	roots *catalog.RootStore
@@ -94,8 +96,12 @@ func New(
 	}
 }
 
-// UseTLS supplies the certificate for HTTPS listeners.
-func (s *Server) UseTLS(k *tlscert.Keeper) { s.tls = k }
+// UseTLS supplies the certificate for HTTPS listeners, and the directory holding
+// the CA copy that other devices need in order to trust it.
+func (s *Server) UseTLS(k *tlscert.Keeper, stateDir string) {
+	s.tls = k
+	s.stateDir = stateDir
+}
 
 // Handler returns the fully-routed HTTP handler.
 func (s *Server) Handler() http.Handler {
@@ -114,6 +120,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("GET /api/logs/content", s.handleLogContent)
 	mux.HandleFunc("POST /api/logs/dismiss", s.guard(s.handleLogDismiss))
+	// Reachable over plain HTTP by design — see trust.go. A device cannot fetch the
+	// CA over a connection secured by the certificate that CA has to validate.
+	mux.HandleFunc("GET "+trustRoutes.page, s.handleTrustPage)
+	mux.HandleFunc("GET "+trustRoutes.cert, s.handleCACert)
 	mux.HandleFunc("GET /api/roots", s.handleRoots)
 	mux.HandleFunc("POST /api/roots/add", s.guard(s.handleRootAdd))
 	mux.HandleFunc("POST /api/roots/remove", s.guard(s.handleRootRemove))
@@ -239,7 +249,14 @@ func (s *Server) serveOn(ctx context.Context, l net.Listener, h http.Handler, tl
 // The port is dropped rather than translated: this only ever runs on port 80, and
 // its counterpart is 443, so the bare name is exactly right.
 func (s *Server) redirectHandler() http.Handler {
+	app := s.Handler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The two pages that exist to fix an untrusted certificate cannot be behind
+		// that certificate. Everything else redirects.
+		if r.URL.Path == trustRoutes.page || r.URL.Path == trustRoutes.cert {
+			app.ServeHTTP(w, r)
+			return
+		}
 		host := r.Host
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h

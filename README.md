@@ -636,6 +636,27 @@ handler, so the network still cannot change anything through it.
 Verified: HTTP 200 on bare `marina.local`, a POST to `/api/launch` through port 80
 still refused with 403, and both surviving a daemon restart.
 
+### The warning on other devices
+
+The certificate is signed by a CA that exists only on the Mac running Marina, so
+every other device rejects it until that CA is trusted. Port 80 redirects to HTTPS
+— except for two paths, which would otherwise be unreachable behind the very
+certificate they exist to validate:
+
+```
+http://marina.local/trust     what to do, per platform
+http://marina.local/ca.pem    the CA's public certificate
+```
+
+Open the first on the other device and follow it. It covers macOS and iOS,
+including the step iOS hides — a profile does nothing until it is switched on under
+Settings → General → About → Certificate Trust Settings.
+
+Only the CA's **public** certificate is served. mkcert's private key is never read
+by the daemon: with it, that machine could issue a certificate for any site on
+earth that the trusting device would accept. The page says so, because installing
+a root CA deserves an informed decision rather than a download button.
+
 **Not a pf redirect, deliberately.** Redirecting port 80 with `pf` is the usual
 advice online and it is the wrong tool:
 
