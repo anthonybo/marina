@@ -24,6 +24,7 @@ ROOTS=""
 NO_PROBE=""
 LAN=""
 PORT80=""
+TLS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -39,6 +40,10 @@ while [[ $# -gt 0 ]]; do
     # as you — nothing here needs root. Off by default because port 80 is a
     # popular port and taking it should be a decision.
     --port80) PORT80="1"; LAN="1"; shift ;;
+    # Only worth it with a publicly-trusted certificate for a real domain. With a
+    # private CA every other device shows a full-page warning until it installs
+    # that CA, which is worse than plain HTTP.
+    --tls) TLS="1"; PORT80="1"; LAN="1"; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -102,7 +107,7 @@ fi
 # Names, not addresses: the address changes with the DHCP lease and a certificate
 # baked to one would silently go stale, which is the same reason marina.local
 # exists at all.
-if [ -n "$PORT80" ]; then
+if [ -n "$TLS" ]; then
   if command -v mkcert >/dev/null 2>&1; then
     mkdir -p "$DEST/tls"
     MDNS_HOST="$(scutil --get LocalHostName 2>/dev/null || echo "$(hostname -s)").local"
@@ -132,6 +137,31 @@ case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "  ! add $BIN_DIR to your PATH to use the 'marina' command" ;;
 esac
+
+# The privileged sockets, if asked for. launchd binds these before starting the
+# job, so the daemon serves them without ever being privileged. Built here as a
+# string rather than inside the plist heredoc: that heredoc is quoted, so command
+# substitution inside it is emitted literally and produces invalid XML.
+SOCKETS_XML=""
+if [ -n "$PORT80" ]; then
+  SOCKETS_XML="  <key>Sockets</key>
+  <dict>
+    <key>Listeners</key>
+    <dict>
+      <key>SockServiceName</key><string>80</string>
+      <key>SockType</key><string>stream</string>
+    </dict>"
+  if [ -n "$TLS" ]; then
+    SOCKETS_XML="$SOCKETS_XML
+    <key>TLS</key>
+    <dict>
+      <key>SockServiceName</key><string>443</string>
+      <key>SockType</key><string>stream</string>
+    </dict>"
+  fi
+  SOCKETS_XML="$SOCKETS_XML
+  </dict>"
+fi
 
 # 4) launchd jobs. Both RunAtLoad and KeepAlive so they survive a reboot and a
 #    crash. Unlike the cmux socket, nothing here needs a terminal session.
@@ -168,29 +198,11 @@ $(for arg in "$@"; do printf '    <string>%s</string>\n' "$arg"; done)
     <key>MARINA_ADDR</key><string>$ADDR</string>
 $( [ -n "$ROOTS" ] && printf '    <key>MARINA_ROOTS</key><string>%s</string>\n' "$ROOTS" )
 $( [ -n "$NO_PROBE" ] && printf '    <key>MARINA_NO_PROBE</key><string>%s</string>\n' "$NO_PROBE" )
+$( [ -n "$TLS" ] && printf '    <key>MARINA_TLS</key><string>1</string>\n' )
 $( [ -n "$LAN" ] && printf '    <key>MARINA_LAN</key><string>1</string>\n' )
     <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
-$( [ -n "$PORT80" ] && cat <<'SOCK'
-  <!-- launchd binds these before starting the job, so the daemon gets listeners on
-       privileged ports without ever being privileged itself. The key names must
-       match what the daemon asks for: launchsock.Listeners("Listeners") and
-       ("TLS"). Port 80 only redirects to 443; the app is served over https. -->
-  <key>Sockets</key>
-  <dict>
-    <key>Listeners</key>
-    <dict>
-      <key>SockServiceName</key><string>80</string>
-      <key>SockType</key><string>stream</string>
-    </dict>
-    <key>TLS</key>
-    <dict>
-      <key>SockServiceName</key><string>443</string>
-      <key>SockType</key><string>stream</string>
-    </dict>
-  </dict>
-SOCK
-)
+$SOCKETS_XML
   <key>StandardOutPath</key><string>$DEST/marina.log</string>
   <key>StandardErrorPath</key><string>$DEST/marina.log</string>
 </dict>
@@ -200,6 +212,11 @@ PLIST
 
 reload() {
   local label="$1" plist="$2" domain="gui/$(id -u)" i
+  if ! plutil -lint "$plist" >/dev/null 2>&1; then
+    echo "ERROR: generated an invalid plist — refusing to load it:" >&2
+    plutil -lint "$plist" >&2 || true
+    return 1
+  fi
   launchctl bootout "$domain/$label" 2>/dev/null || true
 
   # bootout returns before launchd has finished tearing the job down, so a
@@ -237,7 +254,8 @@ echo "  ✓ daemon registered with launchd (starts at login)"
 [ -n "$ROOTS" ] && echo "  ✓ scanning for projects in: $ROOTS"
 [ -n "$NO_PROBE" ] && echo "  ✓ HTTP probing disabled for ports: $NO_PROBE"
 [ -n "$LAN" ] && echo "  ✓ listening on the network too — other devices can view, not change"
-[ -n "$PORT80" ] && echo "  ✓ https://${MDNS_NAME:-marina}.local — no port, and a real padlock"
+[ -n "$PORT80" ] && echo "  ✓ http://${MDNS_NAME:-marina}.local — no port needed"
+[ -n "$TLS" ] && echo "  ! https enabled: other devices will warn unless the certificate is publicly trusted"
 
 write_plist "$MENU_LABEL" "$AGENTS/$MENU_LABEL.plist" \
   "$DEST/Marina.app/Contents/MacOS/Marina"

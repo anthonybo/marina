@@ -636,44 +636,41 @@ handler, so the network still cannot change anything through it.
 Verified: HTTP 200 on bare `marina.local`, a POST to `/api/launch` through port 80
 still refused with 403, and both surviving a daemon restart.
 
-### The warning on other devices
+### Why it is HTTP, and what a padlock would cost
 
-The certificate is signed by a CA that exists only on the Mac running Marina, so
-every other device rejects it until that CA is trusted. Port 80 redirects to HTTPS
-— except for two paths, which would otherwise be unreachable behind the very
-certificate they exist to validate:
+`http://marina.local` — plain, no redirect, loads instantly on every device.
 
-```
-http://marina.local/trust     what to do, per platform
-http://marina.local/ca.pem    the CA's public certificate
-```
+That is not a shortcut taken for convenience. **No public certificate authority may
+issue a certificate for a `.local` name.** The CA/Browser Forum's Baseline
+Requirements have prohibited internal names and RFC-1918 addresses [since 1 November
+2015](https://cabforum.org/working-groups/server/internal-names/), and mDNS names
+are explicitly included. The only way to serve HTTPS on this name is a private CA —
+and every device then rejects it with a full-page interstitial until that CA is
+installed on it. Plain HTTP costs a grey "Not secure" chip and nothing else; a
+private CA costs an install on every phone and laptop before anything loads at all.
 
-Open the first on the other device and follow it. It covers macOS and iOS,
-including the step iOS hides — a profile does nothing until it is switched on under
-Settings → General → About → Certificate Trust Settings.
+Marina had this the wrong way round briefly: HTTPS with an mkcert certificate, which
+looked right on the machine that minted it and blocked every other device. The
+listener for it is now opt-in (`--tls`) and off by default, so a browser that tries
+HTTPS first gets a refused connection and falls back, rather than a warning.
 
-Only the CA's **public** certificate is served. mkcert's private key is never read
-by the daemon: with it, that machine could issue a certificate for any site on
-earth that the trusting device would accept. The page says so, because installing
-a root CA deserves an informed decision rather than a download button.
+**If you want a real padlock**, the name has to change — a certificate is possible
+for a domain you own, not for `.local`:
 
-**Not a pf redirect, deliberately.** Redirecting port 80 with `pf` is the usual
-advice online and it is the wrong tool:
-
-- Apple's [TN3165: Packet Filter is not
-  API](https://developer.apple.com/documentation/technotes/tn3165-packet-filter-is-not-api)
-  says `pf` is an implementation detail of macOS networking, not an interface, and
-  directs developers to Network Extension instead.
-- `pf` rule sets are [reported to be flushed when the network
-  changes](https://developer.apple.com/forums/thread/774555) — a Wi-Fi toggle is
-  enough. That is the exact event that changes the address this feature exists to
-  publish, so it would fail at the only moment it mattered.
-- On macOS 15.3.2 a custom `rdr` rule [broke all other traffic on the
-  interface](https://developer.apple.com/forums/thread/776492) until a restart.
-
-Socket activation has none of those problems: launchd owns the binding, it is a
-documented API, and it survives reboots and network changes because it has nothing
-to do with packet filtering.
+- **A real domain plus ACME DNS-01.** Point `marina.example.com` at the LAN address
+  and take a Let's Encrypt certificate through a DNS challenge, which needs no
+  inbound connection. Every device trusts it with nothing installed.
+- **The catch worth knowing first:** a public DNS record answering with a private
+  address is what DNS-rebinding protection exists to block, and it is
+  [enabled by default](https://docs.netgate.com/pfsense/en/latest/services/dns/rebinding.html)
+  on pfSense, Google Home/Nest, and NextDNS among others. Where it is on, the answer
+  is stripped and the name does not resolve at all — so this is worth testing on
+  your own resolver before building on it.
+- Services like [tlsmy.net](https://github.com/supersat/tlsmy.net) and
+  [DummyTLS](https://github.com/paullouisageneau/dummytls) do the same trick on a
+  shared domain, encoding the address into the hostname. They work without owning a
+  domain, at the cost of trusting the operator, and some publish the private key —
+  which removes the warning without providing much privacy.
 
 Two things worth knowing, because both fail quietly:
 

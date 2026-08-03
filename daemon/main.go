@@ -91,6 +91,7 @@ func runServe() int {
 		noProbe     = flag.String("no-probe", envOr("MARINA_NO_PROBE", ""), "ports never to contact over HTTP, e.g. \"3001-3013,9229\"")
 		mdnsName    = flag.String("mdns-name", envOr("MARINA_MDNS_NAME", "marina"), "short Bonjour name to publish for this machine, e.g. \"marina\" for marina.local; empty to publish nothing")
 		lan         = flag.Bool("lan", envOr("MARINA_LAN", "") != "", "also listen on this machine's network address, so other devices can load the dashboard; changes are still refused from anything but this machine")
+		serveTLS    = flag.Bool("tls", envOr("MARINA_TLS", "") != "", "serve https on 443 and redirect 80 to it; only worth enabling with a publicly-trusted certificate, since a private CA makes every other device show a warning")
 		roots       = flag.String("roots", envOr("MARINA_ROOTS", defaultRoots()), "comma-separated directories to scan for projects you could start")
 		verbose     = flag.Bool("v", false, "verbose logging")
 	)
@@ -202,14 +203,26 @@ func runServe() int {
 	// with nothing privileged running. Absent when started from a terminal or
 	// installed without them, which is not an error.
 	//
-	// Port 80 only redirects. Serving the app on both schemes would mean a page
-	// that is sometimes secure and sometimes not depending on how it was reached,
-	// and no way to tell which you got.
+	// Port 80 serves the app in plain HTTP. It is tempting to redirect to HTTPS and
+	// it would be wrong here: no public certificate authority may issue for a
+	// .local name — the CA/Browser Forum banned internal names in November 2015 —
+	// so any certificate on this name is signed by a CA that exists on one machine,
+	// and every other device rejects it with a full-page interstitial until that CA
+	// is installed. Plain HTTP loads instantly on every device instead, with a grey
+	// "Not secure" chip and no click-through. A private dashboard that opens is
+	// worth more than a padlock that blocks.
+	//
+	// The TLS listener is opt-in for the one case where it is genuinely warning-free:
+	// a real domain with a publicly-trusted certificate. Without that it stays off,
+	// so a browser trying HTTPS first fails fast and falls back rather than landing
+	// on a warning.
 	var extra []api.Extra
-	for name, kind := range map[string]api.Extra{
-		"Listeners": {RedirectToTLS: true},
-		"TLS":       {TLS: true},
-	} {
+	kinds := map[string]api.Extra{"Listeners": {}}
+	if *serveTLS {
+		kinds["Listeners"] = api.Extra{RedirectToTLS: true}
+		kinds["TLS"] = api.Extra{TLS: true}
+	}
+	for name, kind := range kinds {
 		listeners, err := launchsock.Listeners(name)
 		switch {
 		case err == nil:
