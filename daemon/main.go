@@ -88,6 +88,7 @@ func runServe() int {
 		healthEvery = flag.Duration("health-interval", envDuration("MARINA_HEALTH_INTERVAL", 3*time.Second), "how often to sample per-app CPU and memory")
 		noProbe     = flag.String("no-probe", envOr("MARINA_NO_PROBE", ""), "ports never to contact over HTTP, e.g. \"3001-3013,9229\"")
 		mdnsName    = flag.String("mdns-name", envOr("MARINA_MDNS_NAME", "marina"), "short Bonjour name to publish for this machine, e.g. \"marina\" for marina.local; empty to publish nothing")
+		lan         = flag.Bool("lan", envOr("MARINA_LAN", "") != "", "also listen on this machine's network address, so other devices can load the dashboard; changes are still refused from anything but this machine")
 		roots       = flag.String("roots", envOr("MARINA_ROOTS", defaultRoots()), "comma-separated directories to scan for projects you could start")
 		verbose     = flag.Bool("v", false, "verbose logging")
 	)
@@ -104,6 +105,15 @@ func runServe() int {
 	if !isLoopback(*addr) {
 		log.Error("marina: refusing to bind a non-loopback address", "addr", *addr)
 		return 1
+	}
+
+	// Loopback unless asked otherwise. A dashboard that can start processes should
+	// not become reachable by accident, so the network is opt-in and the flag says
+	// what it costs. Mutations stay loopback-only either way — see api.guard.
+	if *lan {
+		if _, port, err := net.SplitHostPort(*addr); err == nil && isLoopback(*addr) {
+			*addr = net.JoinHostPort("0.0.0.0", port)
+		}
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

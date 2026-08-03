@@ -20,6 +20,7 @@ DAEMON_LABEL="tech.bocchino.marina"
 MENU_LABEL="tech.bocchino.marina.menubar"
 ROOTS=""
 NO_PROBE=""
+LAN=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -27,6 +28,9 @@ while [[ $# -gt 0 ]]; do
     --version) VERSION="$2"; shift 2 ;;
     --roots) ROOTS="$2"; shift 2 ;;
     --no-probe) NO_PROBE="$2"; shift 2 ;;
+    # Let other devices load the dashboard. Changes stay refused from anything
+    # but this machine, so this grants a view and links, not control.
+    --lan) LAN="1"; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -122,6 +126,7 @@ $(for arg in "$@"; do printf '    <string>%s</string>\n' "$arg"; done)
     <key>MARINA_ADDR</key><string>$ADDR</string>
 $( [ -n "$ROOTS" ] && printf '    <key>MARINA_ROOTS</key><string>%s</string>\n' "$ROOTS" )
 $( [ -n "$NO_PROBE" ] && printf '    <key>MARINA_NO_PROBE</key><string>%s</string>\n' "$NO_PROBE" )
+$( [ -n "$LAN" ] && printf '    <key>MARINA_LAN</key><string>1</string>\n' )
     <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>StandardOutPath</key><string>$DEST/marina.log</string>
@@ -169,6 +174,7 @@ reload "$DAEMON_LABEL" "$AGENTS/$DAEMON_LABEL.plist"
 echo "  ✓ daemon registered with launchd (starts at login)"
 [ -n "$ROOTS" ] && echo "  ✓ scanning for projects in: $ROOTS"
 [ -n "$NO_PROBE" ] && echo "  ✓ HTTP probing disabled for ports: $NO_PROBE"
+[ -n "$LAN" ] && echo "  ✓ listening on the network too — other devices can view, not change"
 
 write_plist "$MENU_LABEL" "$AGENTS/$MENU_LABEL.plist" \
   "$DEST/Marina.app/Contents/MacOS/Marina"

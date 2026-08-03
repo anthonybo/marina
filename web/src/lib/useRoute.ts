@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
  * and a back button, not a routing library.
  */
 export interface Route {
-  name: 'dashboard' | 'logs' | 'health'
+  name: 'dashboard' | 'logs' | 'health' | 'dock'
   /** For 'logs', the terminal being viewed, if any. */
   param: string | null
 }
@@ -17,6 +17,11 @@ function parse(pathname: string): Route {
   }
   if (parts[0] === 'health') {
     return { name: 'health', param: null }
+  }
+  // The phone page. Reachable explicitly so it can be looked at from this Mac,
+  // though a remote visitor is sent here from / without asking.
+  if (parts[0] === 'dock') {
+    return { name: 'dock', param: null }
   }
   return { name: 'dashboard', param: null }
 }

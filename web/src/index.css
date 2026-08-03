@@ -263,6 +263,42 @@
   animation: lamp 3.4s ease-in-out infinite;
 }
 
+/* Arrivals and departures on the phone page. One-shot, because they mark an event
+   — an app started, an app stopped — rather than filling time. Nothing here loops,
+   so the page goes idle the moment the harbour is settled. */
+@keyframes sail-in {
+  from {
+    opacity: 0;
+    transform: translateX(-28px) rotate(-4deg);
+  }
+  60% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sail-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(34px) rotate(5deg);
+  }
+}
+
+.animate-sail-in {
+  animation: sail-in 900ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
+}
+
+.animate-sail-out {
+  animation: sail-out 1100ms cubic-bezier(0.4, 0, 0.7, 0.4) both;
+}
+
 /* Nobody is looking: hold every animation where it stands. A running animation
    keeps the browser producing frames at full refresh rate, so an unattended
    harbour would burn a quarter of a core drawing water for an empty chair. See
@@ -286,6 +322,8 @@ html[data-calm] .animate-lamp {
 /* With reduced motion the harbour becomes a still illustration. It must stay
    fully legible: nothing here encodes meaning through movement alone. */
 @media (prefers-reduced-motion: reduce) {
+  .animate-sail-in,
+  .animate-sail-out,
   .animate-dock-in,
   .animate-sweep,
   .animate-buoy,

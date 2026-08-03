@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AshoreList } from './components/AshoreList'
+import { Dock } from './components/Dock'
 import { LogsView } from './components/LogsView'
 import { Berth } from './components/Berth'
 import { ClusterRows } from './components/ClusterRows'
@@ -32,6 +33,11 @@ export default function App() {
   )
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const searchRef = useRef<HTMLInputElement>(null)
+
+  // Whether this page is being read on the machine Marina runs on. A visitor from
+  // another device cannot reach loopback-bound apps and cannot change anything, so
+  // it is served the phone page instead of controls that would not work.
+  const viewedLocally = /^(localhost|127(\.\d+){3}|\[?::1\]?)$/.test(window.location.hostname)
 
   // Two routes, so the terminals view is linkable and the back button works.
   const { route, navigate } = useRoute()
@@ -125,6 +131,18 @@ export default function App() {
     window.addEventListener('keydown', onEnter)
     return () => window.removeEventListener('keydown', onEnter)
   }, [visible])
+
+  // The phone page stands alone: no top bar, no filters, nothing to administer.
+  if (route.name === 'dock' || (!viewedLocally && route.name === 'dashboard')) {
+    return (
+      <Dock
+        services={snapshot?.services ?? []}
+        net={snapshot?.net}
+        now={now}
+        local={viewedLocally}
+      />
+    )
+  }
 
   return (
     <div className="min-h-screen">

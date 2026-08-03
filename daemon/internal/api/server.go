@@ -798,8 +798,23 @@ func (s *Server) spaHandler() http.Handler {
 	})
 }
 
-// guard rejects cross-site mutations. A same-origin fetch from the dashboard
+// guard rejects mutations that are not this machine's own.
+//
+// Two separate checks, because they stop different things:
+//
+// The Origin check stops a cross-site request — a page you happen to be visiting
+// asking this daemon to start something. A same-origin fetch from the dashboard
 // sends either no Origin or our own; anything else is not ours.
+//
+// The client-address check stops the network. Marina can start and stop
+// processes, and once it listens on a LAN address every device on the Wi-Fi can
+// reach these routes — a guest, a TV, anything with a foothold. Reading state
+// from another device is the point of listening at all; changing it is not, and
+// there is no authentication here that could tell one device from another. So
+// mutations are refused unless the request came from this machine.
+//
+// This lives in guard rather than beside each route so that a new mutating route
+// cannot forget it: every POST is registered through here.
 func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if origin := r.Header.Get("Origin"); origin != "" && !s.allowedOrigin(origin) {
@@ -807,8 +822,29 @@ func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
 			return
 		}
+		if !isLoopbackClient(r.RemoteAddr) {
+			s.log.Warn("api: refused a mutation from the network",
+				"client", r.RemoteAddr, "path", r.URL.Path)
+			writeJSON(w, http.StatusForbidden, map[string]any{
+				"error": "Marina only accepts changes from the machine it runs on. " +
+					"Starting and stopping apps has to be done there.",
+			})
+			return
+		}
 		next(w, r)
 	}
+}
+
+// isLoopbackClient reports whether a request came from this machine.
+func isLoopbackClient(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		// No port at all is not a shape we produce; treat it as untrusted rather
+		// than guessing, because guessing wrong here grants process control.
+		host = remoteAddr
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) allowedOrigin(origin string) bool {

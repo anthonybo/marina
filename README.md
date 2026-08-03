@@ -580,6 +580,52 @@ machines cannot publish the same name on one network, so give the second one a
 different one. The name is withdrawn when the daemon stops, so it never points at
 a machine that has gone.
 
+### The phone page
+
+Other devices get a different page: one question answered large. Boats are the
+apps that are running, the port is the biggest thing on each, and tapping one
+opens it. Nothing to administer, because nothing can be administered from there.
+
+```bash
+npm start -- --lan          # also listen on this machine's network address
+```
+
+Without `--lan` the daemon stays on loopback and no other device can reach it,
+which is the default because a dashboard that can start processes should not
+become reachable by accident.
+
+**With `--lan`, the network can look but not touch.** Every mutating route —
+launch, stop, pin, rename, scanned directories — is refused unless the request
+came from this machine, and the check lives in the one place every POST is
+registered through, so a new route cannot forget it. There is no authentication
+here that could tell one device from another, so "which machine asked" is the only
+distinction available. What the network *can* see is your project names, ports,
+and page titles.
+
+Boats sail in when an app starts and out when it stops, and are otherwise still.
+That is deliberate rather than restrained: a single perpetual CSS animation costs
+about 15% of a CPU core because it stops the browser ever going idle, which is
+worse on a phone. Motion that happens only when something happens is both cheaper
+and more informative.
+
+Apps bound to loopback are drawn at the pier and are not tappable, because a link
+that cannot work is worse than no link.
+
+### Dropping the port
+
+`marina.local:7777` needs no privileges and works as soon as `--lan` is on. If you
+want bare `marina.local`, one root-owned firewall rule redirects port 80:
+
+```bash
+sudo bash scripts/port80.sh            # and --remove to undo
+```
+
+The daemon still runs as you — only the kernel's packet filter is involved.
+Running Marina itself on port 80 would mean running it as root, and every dev
+server it launched would inherit that. One caveat: pf rewrites packets *arriving on
+an interface*, so bare `marina.local` is reliable from other devices and may still
+need the port on this Mac.
+
 Two things worth knowing, because both fail quietly:
 
 - **A server bound to loopback will not answer**, however right the address is.
