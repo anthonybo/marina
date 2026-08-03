@@ -10,6 +10,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +34,7 @@ import (
 	"github.com/anthonybo/marina/daemon/internal/monitor"
 	"github.com/anthonybo/marina/daemon/internal/procs"
 	"github.com/anthonybo/marina/daemon/internal/store"
+	"github.com/anthonybo/marina/daemon/internal/tlscert"
 )
 
 // Server wires the monitor and store to HTTP handlers.
@@ -45,6 +47,9 @@ type Server struct {
 	ui       fs.FS
 	addr     string
 	log      *slog.Logger
+
+	// tls holds the certificate for HTTPS listeners, nil when none is installed.
+	tls *tlscert.Keeper
 
 	// roots persists the scanned-directory list edited from the dashboard.
 	roots *catalog.RootStore
@@ -89,6 +94,9 @@ func New(
 	}
 }
 
+// UseTLS supplies the certificate for HTTPS listeners.
+func (s *Server) UseTLS(k *tlscert.Keeper) { s.tls = k }
+
 // Handler returns the fully-routed HTTP handler.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -126,13 +134,25 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
+// Extra describes a listener someone else already bound — in practice launchd,
+// which is how the privileged ports are served without anything running as root.
+type Extra struct {
+	Listener net.Listener
+	// TLS serves HTTPS here, using the configured certificate.
+	TLS bool
+	// RedirectToTLS answers with a permanent redirect to the https origin instead
+	// of serving the app. Used on port 80 so that typing the bare name lands on a
+	// padlock rather than on a page the browser calls "Not Secure".
+	RedirectToTLS bool
+}
+
 // ListenAndServe serves until ctx is cancelled.
 //
-// extra are listeners already bound by someone else — in practice launchd, which
-// is how port 80 is served without anything running as root. They carry the same
-// handler, so the guard that refuses changes from the network applies to them
-// identically; a privileged port must not become a way around it.
-func (s *Server) ListenAndServe(ctx context.Context, extra ...net.Listener) error {
+// Every listener carries the same handler, so the guard that refuses changes from
+// anywhere but this machine applies identically — a privileged port must not become
+// a way around it. The one exception is a redirect-only listener, which serves no
+// app surface at all.
+func (s *Server) ListenAndServe(ctx context.Context, extra ...Extra) error {
 	srv := &http.Server{
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -156,19 +176,80 @@ func (s *Server) ListenAndServe(ctx context.Context, extra ...net.Listener) erro
 	// Each inherited listener gets its own Serve. Their errors are logged rather
 	// than returned: losing the shorter URL should not take the dashboard down with
 	// it, and the address on its own port is the one people rely on.
-	for _, l := range extra {
-		s.log.Info("marina: also listening", "addr", l.Addr().String())
-		go func(l net.Listener) {
-			if err := srv.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				s.log.Warn("marina: inherited listener stopped", "addr", l.Addr().String(), "err", err)
+	//
+	// The plain :7777 listener is deliberately never redirected — `marina status`,
+	// the menu bar app, and the install script all speak plain HTTP to it, and
+	// bouncing them to https would break every one of them for a padlock they never
+	// see.
+	for _, e := range extra {
+		addr := e.Listener.Addr().String()
+		switch {
+		case e.RedirectToTLS:
+			s.log.Info("marina: redirecting to https", "addr", addr)
+			go s.serveOn(ctx, e.Listener, s.redirectHandler(), nil, addr)
+		case e.TLS:
+			if s.tls == nil {
+				s.log.Warn("marina: no certificate, cannot serve https here", "addr", addr)
+				e.Listener.Close()
+				continue
 			}
-		}(l)
+			s.log.Info("marina: also listening (https)", "addr", addr, "names", s.tls.Names())
+			go s.serveOn(ctx, e.Listener, srv.Handler, s.tls.Config(), addr)
+		default:
+			s.log.Info("marina: also listening", "addr", addr)
+			go s.serveOn(ctx, e.Listener, srv.Handler, nil, addr)
+		}
 	}
 
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
+}
+
+// serveOn runs one inherited listener, optionally wrapped in TLS.
+func (s *Server) serveOn(ctx context.Context, l net.Listener, h http.Handler, tlsCfg *tls.Config, addr string) {
+	srv := &http.Server{
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+		TLSConfig:         tlsCfg,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
+	}
+	go func() {
+		<-ctx.Done()
+		shutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutCtx)
+	}()
+
+	var err error
+	if tlsCfg != nil {
+		// The certificate comes from TLSConfig.GetCertificate, so no files here.
+		err = srv.ServeTLS(l, "", "")
+	} else {
+		err = srv.Serve(l)
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		s.log.Warn("marina: listener stopped", "addr", addr, "err", err)
+	}
+}
+
+// redirectHandler sends a request to the https origin for the same host.
+//
+// The port is dropped rather than translated: this only ever runs on port 80, and
+// its counterpart is 443, so the bare name is exactly right.
+func (s *Server) redirectHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		target := "https://" + host + r.URL.RequestURI()
+		// 307 rather than 301: a permanent redirect gets cached hard by browsers,
+		// and a local dashboard whose certificate might be removed later should not
+		// leave a permanent instruction behind in every browser that saw it.
+		http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+	})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

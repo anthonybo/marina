@@ -94,6 +94,31 @@ if [ -n "$ROOTS" ] && [ -f "$DEST/roots.json" ]; then
   echo "  ! --roots given: cleared the directory list saved from the dashboard"
 fi
 
+# A certificate the browser already trusts, so the dashboard is not permanently
+# labelled "Not Secure". mkcert signs with a root it installed into the system
+# keychain, which is what makes this trusted rather than merely encrypted — a
+# self-signed certificate would trade one warning for a louder one.
+#
+# Names, not addresses: the address changes with the DHCP lease and a certificate
+# baked to one would silently go stale, which is the same reason marina.local
+# exists at all.
+if [ -n "$PORT80" ]; then
+  if command -v mkcert >/dev/null 2>&1; then
+    mkdir -p "$DEST/tls"
+    MDNS_HOST="$(scutil --get LocalHostName 2>/dev/null || echo "$(hostname -s)").local"
+    if mkcert -cert-file "$DEST/tls/cert.pem" -key-file "$DEST/tls/key.pem" \
+         "${MDNS_NAME:-marina}.local" "$MDNS_HOST" localhost 127.0.0.1 ::1 >/dev/null 2>&1; then
+      chmod 600 "$DEST/tls/key.pem"
+      echo "  ✓ certificate for ${MDNS_NAME:-marina}.local, $MDNS_HOST (trusted by this Mac)"
+    else
+      echo "  ! mkcert failed; the dashboard will be served over plain HTTP"
+    fi
+  else
+    echo "  ! mkcert not installed, so https is unavailable (brew install mkcert && mkcert -install)"
+    echo "    without it the browser will call the dashboard \"Not Secure\""
+  fi
+fi
+
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "  ! add $BIN_DIR to your PATH to use the 'marina' command" ;;
@@ -138,14 +163,20 @@ $( [ -n "$LAN" ] && printf '    <key>MARINA_LAN</key><string>1</string>\n' )
     <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
 $( [ -n "$PORT80" ] && cat <<'SOCK'
-  <!-- launchd binds this before starting the job, so the daemon gets a listener
-       on a privileged port without ever being privileged itself. The key name
-       must match the one the daemon asks for: launchsock.Listeners("Listeners"). -->
+  <!-- launchd binds these before starting the job, so the daemon gets listeners on
+       privileged ports without ever being privileged itself. The key names must
+       match what the daemon asks for: launchsock.Listeners("Listeners") and
+       ("TLS"). Port 80 only redirects to 443; the app is served over https. -->
   <key>Sockets</key>
   <dict>
     <key>Listeners</key>
     <dict>
       <key>SockServiceName</key><string>80</string>
+      <key>SockType</key><string>stream</string>
+    </dict>
+    <key>TLS</key>
+    <dict>
+      <key>SockServiceName</key><string>443</string>
       <key>SockType</key><string>stream</string>
     </dict>
   </dict>
@@ -197,7 +228,7 @@ echo "  ✓ daemon registered with launchd (starts at login)"
 [ -n "$ROOTS" ] && echo "  ✓ scanning for projects in: $ROOTS"
 [ -n "$NO_PROBE" ] && echo "  ✓ HTTP probing disabled for ports: $NO_PROBE"
 [ -n "$LAN" ] && echo "  ✓ listening on the network too — other devices can view, not change"
-[ -n "$PORT80" ] && echo "  ✓ port 80 too, so http://marina.local works without a port"
+[ -n "$PORT80" ] && echo "  ✓ https://${MDNS_NAME:-marina}.local — no port, and a real padlock"
 
 write_plist "$MENU_LABEL" "$AGENTS/$MENU_LABEL.plist" \
   "$DEST/Marina.app/Contents/MacOS/Marina"

@@ -36,6 +36,7 @@ import (
 	"github.com/anthonybo/marina/daemon/internal/monitor"
 	"github.com/anthonybo/marina/daemon/internal/probe"
 	"github.com/anthonybo/marina/daemon/internal/store"
+	"github.com/anthonybo/marina/daemon/internal/tlscert"
 	"github.com/anthonybo/marina/daemon/internal/webui"
 )
 
@@ -185,24 +186,47 @@ func runServe() int {
 
 	srv := api.New(mon, st, launcher, logStore, sampler, rootStore, webui.FS(), webui.Placeholder(), *addr, log)
 
-	// Ports below 1024 need root to bind, and this daemon launches your dev
-	// servers — it has no business being root, and neither do they. launchd binds
-	// the port instead and hands over the descriptor, so bare http://marina.local
-	// works with nothing privileged running. Absent when started from a terminal or
-	// installed without a privileged port, which is not an error.
-	inherited, err := launchsock.Listeners("Listeners")
-	switch {
-	case err == nil:
-		for _, l := range inherited {
-			log.Info("marina: adopted a socket from launchd", "addr", l.Addr().String())
-		}
-	case errors.Is(err, launchsock.ErrNotManaged), errors.Is(err, launchsock.ErrNoSocket):
-		// Nothing to adopt. Normal.
-	default:
-		log.Warn("marina: could not adopt launchd sockets", "err", err)
+	// A certificate the machine already trusts, minted by the installer with
+	// mkcert. Without it the dashboard is plain HTTP and the browser says "Not
+	// Secure", which is noise on a local tool but noise people reasonably want gone.
+	if keeper, err := tlscert.Load(stateDir()); err == nil {
+		srv.UseTLS(keeper)
+		log.Info("marina: serving https where available", "names", keeper.Names())
+	} else if !errors.Is(err, tlscert.ErrAbsent) {
+		log.Warn("marina: could not load the certificate", "err", err)
 	}
 
-	if err := srv.ListenAndServe(ctx, inherited...); err != nil {
+	// Ports below 1024 need root to bind, and this daemon launches your dev
+	// servers — it has no business being root, and neither do they. launchd binds
+	// the ports instead and hands over the descriptors, so bare marina.local works
+	// with nothing privileged running. Absent when started from a terminal or
+	// installed without them, which is not an error.
+	//
+	// Port 80 only redirects. Serving the app on both schemes would mean a page
+	// that is sometimes secure and sometimes not depending on how it was reached,
+	// and no way to tell which you got.
+	var extra []api.Extra
+	for name, kind := range map[string]api.Extra{
+		"Listeners": {RedirectToTLS: true},
+		"TLS":       {TLS: true},
+	} {
+		listeners, err := launchsock.Listeners(name)
+		switch {
+		case err == nil:
+			for _, l := range listeners {
+				e := kind
+				e.Listener = l
+				extra = append(extra, e)
+				log.Info("marina: adopted a socket from launchd", "socket", name, "addr", l.Addr().String())
+			}
+		case errors.Is(err, launchsock.ErrNotManaged), errors.Is(err, launchsock.ErrNoSocket):
+			// Nothing of that name. Normal.
+		default:
+			log.Warn("marina: could not adopt launchd sockets", "socket", name, "err", err)
+		}
+	}
+
+	if err := srv.ListenAndServe(ctx, extra...); err != nil {
 		log.Error("marina: server stopped", "err", err)
 		return 1
 	}
