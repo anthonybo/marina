@@ -611,20 +611,37 @@ and more informative.
 Apps bound to loopback are drawn at the pier and are not tappable, because a link
 that cannot work is worse than no link.
 
-### Dropping the port
+### Why the URL keeps its port
 
-`marina.local:7777` needs no privileges and works as soon as `--lan` is on. If you
-want bare `marina.local`, one root-owned firewall rule redirects port 80:
+`marina.local:7777`, not `marina.local`. Ports below 1024 need root on macOS, and
+the daemon that launches your dev servers has no business running as root — every
+process it started would inherit that.
 
-```bash
-sudo bash scripts/port80.sh            # and --remove to undo
-```
+The usual workaround is a `pf` redirect from 80. This project shipped one briefly
+and then removed it, because reading Apple's own position on `pf` makes it a bad
+trade:
 
-The daemon still runs as you — only the kernel's packet filter is involved.
-Running Marina itself on port 80 would mean running it as root, and every dev
-server it launched would inherit that. One caveat: pf rewrites packets *arriving on
-an interface*, so bare `marina.local` is reliable from other devices and may still
-need the port on this Mac.
+- **`pf` is not API.** Apple's [TN3165: Packet Filter is not
+  API](https://developer.apple.com/documentation/technotes/tn3165-packet-filter-is-not-api)
+  states it is an implementation detail of macOS networking, tells developers to
+  migrate to Network Extension, and their DTS engineers answer `pf` questions by
+  pointing at it. Developers read it as a signal `pf` may not survive a major
+  release.
+- **The rules get flushed when the network changes.** Reported on the [Apple
+  developer forums](https://developer.apple.com/forums/thread/774555): a custom
+  anchor stops applying after a Wi-Fi toggle or a network switch until it is
+  reloaded by hand. That is exactly when this feature is needed — a new lease is
+  the event that changes the address — so it would fail precisely when it mattered.
+- **It can take the interface down with it.** On macOS 15.3.2 a custom `rdr` rule
+  [broke all other traffic on the affected
+  interface](https://developer.apple.com/forums/thread/776492), and commenting it
+  out did not help until a restart.
+
+A port in a bookmark costs nothing after the first time. The supported way to serve
+a privileged port unprivileged is launchd socket activation — a root job binds `:80`
+and hands the descriptor to a process running as you — but that turns a login agent
+into a system daemon and needs cgo to pick the socket up, which is a lot of moving
+parts for a shorter URL.
 
 Two things worth knowing, because both fail quietly:
 
