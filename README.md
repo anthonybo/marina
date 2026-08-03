@@ -655,7 +655,8 @@ listener for it is now opt-in (`--tls`) and off by default, so a browser that tr
 HTTPS first gets a refused connection and falls back, rather than a warning.
 
 **If you want a real padlock**, the name has to change — a certificate is possible
-for a domain you own, not for `.local`:
+for a domain you own, not for `.local`. [TODO.md](TODO.md) carries the full route and
+the test to run before building it:
 
 - **A real domain plus ACME DNS-01.** Point `marina.example.com` at the LAN address
   and take a Let's Encrypt certificate through a DNS challenge, which needs no
@@ -753,6 +754,12 @@ launchctl bootout gui/$(id -u)/tech.bocchino.marina
   can reach localhost.
 - Processes that speak their own wire protocol (Postgres, Redis, Mongo) are never
   probed over HTTP, to keep junk out of their logs.
+
+## Deferred work
+
+[TODO.md](TODO.md) lists what was consciously left undone and why — the padlock route
+via a real domain, apps still bound to loopback, and a few smaller things — with
+enough context to pick each one up cold.
 
 ## Uninstall
 
