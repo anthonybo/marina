@@ -611,37 +611,48 @@ and more informative.
 Apps bound to loopback are drawn at the pier and are not tappable, because a link
 that cannot work is worse than no link.
 
-### Why the URL keeps its port
+### Bare marina.local, with nothing running as root
 
-`marina.local:7777`, not `marina.local`. Ports below 1024 need root on macOS, and
-the daemon that launches your dev servers has no business running as root — every
-process it started would inherit that.
+```bash
+npm start -- --port80
+```
 
-The usual workaround is a `pf` redirect from 80. This project shipped one briefly
-and then removed it, because reading Apple's own position on `pf` makes it a bad
-trade:
+Then `http://marina.local` — no port. Ports below 1024 need root to bind, and a
+daemon that launches your dev servers has no business being root, since everything
+it starts would inherit that. So it does not bind port 80 at all: **launchd binds
+it and hands over the descriptor**, and the daemon carries on as your user.
 
-- **`pf` is not API.** Apple's [TN3165: Packet Filter is not
+```
+$ lsof -nP -iTCP:80 -sTCP:LISTEN
+marina   uid=anthonybo   *:80
+```
+
+That is the `Sockets` entry in the launchd plist plus `launch_activate_socket` on
+the daemon side — see `internal/launchsock`. It needs cgo, which is only acceptable
+because building this already requires the Xcode command line tools for the Swift
+menu bar app. `--port80` implies `--lan`, and port 80 carries exactly the same
+handler, so the network still cannot change anything through it.
+
+Verified: HTTP 200 on bare `marina.local`, a POST to `/api/launch` through port 80
+still refused with 403, and both surviving a daemon restart.
+
+**Not a pf redirect, deliberately.** Redirecting port 80 with `pf` is the usual
+advice online and it is the wrong tool:
+
+- Apple's [TN3165: Packet Filter is not
   API](https://developer.apple.com/documentation/technotes/tn3165-packet-filter-is-not-api)
-  states it is an implementation detail of macOS networking, tells developers to
-  migrate to Network Extension, and their DTS engineers answer `pf` questions by
-  pointing at it. Developers read it as a signal `pf` may not survive a major
-  release.
-- **The rules get flushed when the network changes.** Reported on the [Apple
-  developer forums](https://developer.apple.com/forums/thread/774555): a custom
-  anchor stops applying after a Wi-Fi toggle or a network switch until it is
-  reloaded by hand. That is exactly when this feature is needed — a new lease is
-  the event that changes the address — so it would fail precisely when it mattered.
-- **It can take the interface down with it.** On macOS 15.3.2 a custom `rdr` rule
-  [broke all other traffic on the affected
-  interface](https://developer.apple.com/forums/thread/776492), and commenting it
-  out did not help until a restart.
+  says `pf` is an implementation detail of macOS networking, not an interface, and
+  directs developers to Network Extension instead.
+- `pf` rule sets are [reported to be flushed when the network
+  changes](https://developer.apple.com/forums/thread/774555) — a Wi-Fi toggle is
+  enough. That is the exact event that changes the address this feature exists to
+  publish, so it would fail at the only moment it mattered.
+- On macOS 15.3.2 a custom `rdr` rule [broke all other traffic on the
+  interface](https://developer.apple.com/forums/thread/776492) until a restart.
 
-A port in a bookmark costs nothing after the first time. The supported way to serve
-a privileged port unprivileged is launchd socket activation — a root job binds `:80`
-and hands the descriptor to a process running as you — but that turns a login agent
-into a system daemon and needs cgo to pick the socket up, which is a lot of moving
-parts for a shorter URL.
+Socket activation has none of those problems: launchd owns the binding, it is a
+documented API, and it survives reboots and network changes because it has nothing
+to do with packet filtering.
 
 Two things worth knowing, because both fail quietly:
 

@@ -30,6 +30,7 @@ import (
 	"github.com/anthonybo/marina/daemon/internal/api"
 	"github.com/anthonybo/marina/daemon/internal/catalog"
 	"github.com/anthonybo/marina/daemon/internal/health"
+	"github.com/anthonybo/marina/daemon/internal/launchsock"
 	"github.com/anthonybo/marina/daemon/internal/logs"
 	"github.com/anthonybo/marina/daemon/internal/mdns"
 	"github.com/anthonybo/marina/daemon/internal/monitor"
@@ -183,7 +184,25 @@ func runServe() int {
 	}
 
 	srv := api.New(mon, st, launcher, logStore, sampler, rootStore, webui.FS(), webui.Placeholder(), *addr, log)
-	if err := srv.ListenAndServe(ctx); err != nil {
+
+	// Ports below 1024 need root to bind, and this daemon launches your dev
+	// servers — it has no business being root, and neither do they. launchd binds
+	// the port instead and hands over the descriptor, so bare http://marina.local
+	// works with nothing privileged running. Absent when started from a terminal or
+	// installed without a privileged port, which is not an error.
+	inherited, err := launchsock.Listeners("Listeners")
+	switch {
+	case err == nil:
+		for _, l := range inherited {
+			log.Info("marina: adopted a socket from launchd", "addr", l.Addr().String())
+		}
+	case errors.Is(err, launchsock.ErrNotManaged), errors.Is(err, launchsock.ErrNoSocket):
+		// Nothing to adopt. Normal.
+	default:
+		log.Warn("marina: could not adopt launchd sockets", "err", err)
+	}
+
+	if err := srv.ListenAndServe(ctx, inherited...); err != nil {
 		log.Error("marina: server stopped", "err", err)
 		return 1
 	}

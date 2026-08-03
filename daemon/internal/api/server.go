@@ -126,8 +126,13 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// ListenAndServe binds the configured address and serves until ctx is done.
-func (s *Server) ListenAndServe(ctx context.Context) error {
+// ListenAndServe serves until ctx is cancelled.
+//
+// extra are listeners already bound by someone else — in practice launchd, which
+// is how port 80 is served without anything running as root. They carry the same
+// handler, so the guard that refuses changes from the network applies to them
+// identically; a privileged port must not become a way around it.
+func (s *Server) ListenAndServe(ctx context.Context, extra ...net.Listener) error {
 	srv := &http.Server{
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -147,6 +152,18 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		defer cancel()
 		_ = srv.Shutdown(shutCtx)
 	}()
+
+	// Each inherited listener gets its own Serve. Their errors are logged rather
+	// than returned: losing the shorter URL should not take the dashboard down with
+	// it, and the address on its own port is the one people rely on.
+	for _, l := range extra {
+		s.log.Info("marina: also listening", "addr", l.Addr().String())
+		go func(l net.Listener) {
+			if err := srv.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				s.log.Warn("marina: inherited listener stopped", "addr", l.Addr().String(), "err", err)
+			}
+		}(l)
+	}
 
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err

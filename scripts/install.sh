@@ -6,6 +6,8 @@
 #   bash scripts/install.sh --port 7788            # use a different port
 #   bash scripts/install.sh --roots ~/projects,~/work
 #   bash scripts/install.sh --no-probe 3001-3013   # never send these ports HTTP
+#   bash scripts/install.sh --lan                  # let other devices view it
+#   bash scripts/install.sh --port80               # ...at http://marina.local, no port
 #
 # Uninstall with: bash scripts/uninstall.sh
 set -euo pipefail
@@ -21,6 +23,7 @@ MENU_LABEL="tech.bocchino.marina.menubar"
 ROOTS=""
 NO_PROBE=""
 LAN=""
+PORT80=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,6 +34,11 @@ while [[ $# -gt 0 ]]; do
     # Let other devices load the dashboard. Changes stay refused from anything
     # but this machine, so this grants a view and links, not control.
     --lan) LAN="1"; shift ;;
+    # Serve bare http://marina.local as well, on port 80. launchd binds the
+    # privileged port and hands the descriptor to the daemon, which keeps running
+    # as you — nothing here needs root. Off by default because port 80 is a
+    # popular port and taking it should be a decision.
+    --port80) PORT80="1"; LAN="1"; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -129,6 +137,20 @@ $( [ -n "$NO_PROBE" ] && printf '    <key>MARINA_NO_PROBE</key><string>%s</strin
 $( [ -n "$LAN" ] && printf '    <key>MARINA_LAN</key><string>1</string>\n' )
     <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
+$( [ -n "$PORT80" ] && cat <<'SOCK'
+  <!-- launchd binds this before starting the job, so the daemon gets a listener
+       on a privileged port without ever being privileged itself. The key name
+       must match the one the daemon asks for: launchsock.Listeners("Listeners"). -->
+  <key>Sockets</key>
+  <dict>
+    <key>Listeners</key>
+    <dict>
+      <key>SockServiceName</key><string>80</string>
+      <key>SockType</key><string>stream</string>
+    </dict>
+  </dict>
+SOCK
+)
   <key>StandardOutPath</key><string>$DEST/marina.log</string>
   <key>StandardErrorPath</key><string>$DEST/marina.log</string>
 </dict>
@@ -175,6 +197,7 @@ echo "  ✓ daemon registered with launchd (starts at login)"
 [ -n "$ROOTS" ] && echo "  ✓ scanning for projects in: $ROOTS"
 [ -n "$NO_PROBE" ] && echo "  ✓ HTTP probing disabled for ports: $NO_PROBE"
 [ -n "$LAN" ] && echo "  ✓ listening on the network too — other devices can view, not change"
+[ -n "$PORT80" ] && echo "  ✓ port 80 too, so http://marina.local works without a port"
 
 write_plist "$MENU_LABEL" "$AGENTS/$MENU_LABEL.plist" \
   "$DEST/Marina.app/Contents/MacOS/Marina"
