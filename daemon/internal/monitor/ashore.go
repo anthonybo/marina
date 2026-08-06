@@ -55,7 +55,16 @@ func mergePorts(
 	seen := make(map[int]bool)
 
 	if historyPorts != nil {
-		for _, port := range historyPorts(path) {
+		// Bounded. A long-lived project accumulates every port it ever answered on —
+		// one here had thirty-nine — and a list that long is not a prediction, it is
+		// an archive. Worse, conflicts are computed against every entry, so each stale
+		// port is another chance to warn about a clash that has nothing to do with
+		// this project. The few most recent carry all the signal.
+		history := historyPorts(path)
+		if len(history) > maxHistoryPorts {
+			history = history[:maxHistoryPorts]
+		}
+		for _, port := range history {
 			if seen[port] {
 				continue
 			}
@@ -101,6 +110,11 @@ func occupiedPorts(services []Service) map[int]holder {
 	}
 	return out
 }
+
+// maxHistoryPorts is how many previously-seen ports are offered as predictions.
+// Enough to cover a project whose front door moves between a couple of ports, far
+// short of its whole history.
+const maxHistoryPorts = 4
 
 // dynamicPortFloor is where the OS starts handing out ephemeral ports.
 //

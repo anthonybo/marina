@@ -205,13 +205,21 @@ func dependencyPortVar(name string) bool {
 	return false
 }
 
-// SortPorts orders by evidence strength, then by port for stability.
+// SortPorts orders by evidence strength, and leaves equally-strong evidence in the
+// order it arrived.
+//
+// The tie-break used to be the port number, and that quietly destroyed the ranking
+// that matters most. History arrives most-recently-seen first — deliberately, since
+// the port a project used an hour ago beats one it used last month — and comparing
+// port numbers reordered it to lowest-first. A project moved from 3001 to 8930 went
+// on being predicted at 3001, a port it had not touched in a day, because 3001 is
+// the smaller number.
+//
+// SliceStable keeps the incoming order for equal ranks, which is what recency needs
+// and is deterministic for the other sources too, since those are read in file order.
 func SortPorts(ports []ExpectedPort) {
 	sort.SliceStable(ports, func(i, j int) bool {
-		if a, b := sourceRank(ports[i].Source), sourceRank(ports[j].Source); a != b {
-			return a < b
-		}
-		return ports[i].Port < ports[j].Port
+		return sourceRank(ports[i].Source) < sourceRank(ports[j].Source)
 	})
 }
 
