@@ -172,3 +172,46 @@ func TestSortServicesKeepsServicesUnderTheirPrimary(t *testing.T) {
 		t.Errorf("services out of order: got :%d, :%d", services[1].Port, services[2].Port)
 	}
 }
+
+// The real shape of a SvelteKit launch, taken from a running project: one Vite
+// process binds both the dev server on :5173 and a random :64683, and its worker
+// runtime adds two more ephemeral ports seconds later. Every one of them reports
+// the same project and framework and none serves a page title, so before this all
+// four scored an identical 30 and which became the front door came down to
+// whichever port number was lower — the right answer for the wrong reason.
+func TestTheFrontDoorIsNotAnEphemeralPort(t *testing.T) {
+	services := []Service{
+		app(64683, "webapp", "", "SvelteKit", ""),
+		app(64684, "webapp", "", "Vite", ""),
+		app(64685, "webapp", "", "Vite", ""),
+		app(5173, "webapp", "", "SvelteKit", ""),
+	}
+	assignRoles(services)
+
+	for _, s := range services {
+		want := RoleService
+		if s.Port == 5173 {
+			want = RolePrimary
+		}
+		if s.Role != want {
+			t.Errorf(":%d is %s, want %s", s.Port, s.Role, want)
+		}
+	}
+}
+
+// The port bonus must not become evidence in its own right. Two services with
+// nothing to distinguish them are peers, and picking one would invent a hierarchy
+// that isn't there.
+func TestChosenPortsAloneStillLeavePeersAlone(t *testing.T) {
+	services := []Service{
+		app(3001, "webapp", "", "", ""),
+		app(3002, "webapp", "", "", ""),
+	}
+	assignRoles(services)
+
+	for _, s := range services {
+		if s.Role != RoleSolo {
+			t.Errorf(":%d is %s, want %s", s.Port, s.Role, RoleSolo)
+		}
+	}
+}

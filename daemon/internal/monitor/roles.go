@@ -63,6 +63,24 @@ func primaryScore(s Service) int {
 	if isUIPath(s.Subpath) || isUIPath(s.Dir) {
 		score += 20
 	}
+	// No evidence stays no evidence: a port number is not a reason to believe
+	// anything, and inventing a front door from a group of equals would invent a
+	// hierarchy that isn't there.
+	if score == 0 {
+		return 0
+	}
+	// Among candidates that do have evidence, a chosen port breaks the tie. A front
+	// door is on 3000 or 5173 because a person or a framework picked it; a worker
+	// that asked the OS for any free port lands above the ephemeral floor.
+	//
+	// Observed: one Vite process binds both its dev server and a random high port,
+	// and both are reported with the project's framework and no page title — two
+	// members scoring an identical 30. Which one became the front door came down to
+	// whichever number happened to be lower, which is not evidence of anything. The
+	// answer it gave was right; the reason it gave was not.
+	if !isDynamicPort(s.Port) {
+		score += 10
+	}
 	return score
 }
 
