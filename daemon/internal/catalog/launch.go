@@ -70,16 +70,35 @@ func (l Launch) Failed() bool { return l.Error != "" }
 
 // Starting reports whether the attempt is still plausibly coming up. An adopted
 // record describes something already running, so it is never "starting".
+//
+// Liveness decides this, not the clock alone. The clock alone was wrong: a project
+// here applies two sets of local database migrations before it starts its dev
+// server, and took 70 seconds from launch to binding its port — so at 60 seconds
+// its row silently stopped saying "starting…" and dropped its amber, ten seconds
+// before the app actually came up. A launch whose process tree is still alive has
+// not finished starting, whatever a guessed constant says.
 func (l Launch) Starting() bool {
-	return !l.Failed() && !l.Adopted && l.Ended.IsZero() && time.Since(l.At) < pendingWindow
+	if l.Failed() || l.Adopted || !l.Ended.IsZero() {
+		return false
+	}
+	if time.Since(l.At) >= startCeiling {
+		return false
+	}
+	return time.Since(l.At) < pendingWindow || l.Live()
 }
 
 // Live reports whether the launched process tree still exists.
 func (l Launch) Live() bool { return procs.GroupAlive(l.PGID) || procs.Alive(l.PID) }
 
-// pendingWindow is how long a launch is reported as "starting" before we stop
-// claiming anything about it.
+// pendingWindow is how long a launch is reported as "starting" without needing to
+// check that its process tree is still there.
 const pendingWindow = 60 * time.Second
+
+// startCeiling is where Marina stops claiming anything at all, however alive the
+// tree looks. It exists only for the pathological case — a command that runs
+// happily forever without ever binding a port Marina can find — so it is set well
+// past any real cold boot rather than tuned to one.
+const startCeiling = 5 * time.Minute
 
 // failFast is how long an exit is treated as "it never got going". A dev server
 // runs indefinitely; one that stops within this window did not start.
