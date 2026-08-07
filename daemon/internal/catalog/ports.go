@@ -149,14 +149,23 @@ func detectPorts(dir string, scripts map[string]string, framework string) []Expe
 			if relErr != nil {
 				rel = filepath.Base(ref)
 			}
-			for _, m := range portFlagRe.FindAllStringSubmatch(string(body), 12) {
-				if port, err := strconv.Atoi(m[1]); err == nil {
-					add(port, SourceScript, rel)
+			// Line by line, because the line a port sits on says what it is for. A
+			// start script routinely checks that its *dependencies* are up before
+			// starting anything, and those checks name ports that belong to Postgres
+			// or Redis, not to this project.
+			for line := range strings.Lines(string(body)) {
+				if probesADependency(line) {
+					continue
 				}
-			}
-			for _, m := range portConfigRe.FindAllStringSubmatch(string(body), 12) {
-				if port, err := strconv.Atoi(m[1]); err == nil {
-					add(port, SourceScript, rel)
+				for _, m := range portFlagRe.FindAllStringSubmatch(line, -1) {
+					if port, err := strconv.Atoi(m[1]); err == nil {
+						add(port, SourceScript, rel)
+					}
+				}
+				for _, m := range portConfigRe.FindAllStringSubmatch(line, -1) {
+					if port, err := strconv.Atoi(m[1]); err == nil {
+						add(port, SourceScript, rel)
+					}
 				}
 			}
 		}
@@ -176,6 +185,36 @@ func detectPorts(dir string, scripts map[string]string, framework string) []Expe
 // isOwnPortVar distinguishes "the port this app listens on" from "the port of
 // something it connects to". DATABASE_PORT and REDIS_PORT describe dependencies;
 // PORT, VITE_PORT, and SERVER_PORT describe this app.
+// probesADependency reports whether a line of a start script is checking on
+// something the project needs rather than describing the project itself.
+//
+// Observed: a start script opening with
+//
+//	if ! pg_isready -h localhost -p 5432 -q; then
+//	  echo "✖ Postgres is not accepting connections on :5432"
+//
+// had 5432 recorded as one of its own ports, and the dashboard then warned that
+// the app could not start because PostgreSQL was using PostgreSQL's port. The line
+// says plainly what it is doing; the port number alone does not.
+func probesADependency(line string) bool {
+	lower := strings.ToLower(line)
+	for _, probe := range []string{
+		// Readiness checks for a service this project talks to.
+		"pg_isready", "psql", "pg_ctl", "redis-cli", "mongosh", "mongo ",
+		"mysql", "mysqladmin", "nc -z", "netcat", "wait-for", "waitfor",
+		"healthcheck", "health-check", "is not accepting", "is not running",
+		// Naming the dependency at all, in a line that mentions a port, means the
+		// port is that dependency's.
+		"postgres", "postgresql", "redis", "mongodb", "mariadb", "elasticsearch",
+		"rabbitmq", "memcached", "clickhouse", "zookeeper", "kafka",
+	} {
+		if strings.Contains(lower, probe) {
+			return true
+		}
+	}
+	return false
+}
+
 func isOwnPortVar(name string) bool {
 	name = strings.ToUpper(name)
 	if name == "PORT" {

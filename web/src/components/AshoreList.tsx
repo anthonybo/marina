@@ -136,7 +136,11 @@ const AshoreChip = memo(function AshoreChip({
   }, [armed])
 
   const click = () => {
-    if (conflicts.length > 0 && !armed) {
+    // Only a clash on the port this row is predicting should stop the click. A
+    // conflict on some lower-ranked expectation produced the worst kind of warning:
+    // the row said :4310 and the tooltip said :5432 was taken, which reads as a
+    // contradiction and teaches you to ignore it.
+    if (clash && !armed) {
       setArmed(true)
       return
     }
@@ -147,11 +151,11 @@ const AshoreChip = memo(function AshoreChip({
   const title = starting
     ? `Starting: ${project.command}`
     : armed
-      ? `:${conflicts[0].port} is already in use by ${conflicts[0].heldBy} — click again to start anyway`
+      ? `:${clash?.port} is already in use by ${clash?.heldBy} — click again to start anyway`
       : [
           `Run: ${project.command}`,
           port && `Expects :${port.port} — ${portEvidence[port.source]}`,
-          clash && `Already in use by ${clash.heldBy}`,
+          clash && `:${clash.port} is already in use by ${clash.heldBy}`,
           failed && project.error && `Last attempt failed: ${project.error}`,
         ]
           .filter(Boolean)

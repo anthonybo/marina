@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/anthonybo/marina/daemon/internal/catalog"
+	"github.com/anthonybo/marina/daemon/internal/identify"
 )
 
 // Ashore is a project Marina found on disk that is not currently listening.
@@ -253,14 +254,24 @@ func ashoreFrom(
 		// inferred from its files, and they cost nothing to collect.
 		entry.Expect = mergePorts(project.Ports, historyPorts, project.Path)
 		for _, expect := range entry.Expect {
-			if held, taken := occupied[expect.Port]; taken {
-				entry.Conflicts = append(entry.Conflicts, Conflict{
-					Port:   expect.Port,
-					HeldBy: held.label,
-					Kind:   held.kind,
-					Source: expect.Source,
-				})
+			held, taken := occupied[expect.Port]
+			if !taken {
+				continue
 			}
+			// A database holding a port a start script merely mentioned is a
+			// dependency being available, not a clash. Marina already classifies what
+			// holds each port, so this needs no table of well-known ports: if infra
+			// has it and the only evidence is a file mentioning the number, the
+			// project is talking to that service, not competing with it.
+			if held.kind == string(identify.KindInfra) && expect.Source != catalog.SourceHistory {
+				continue
+			}
+			entry.Conflicts = append(entry.Conflicts, Conflict{
+				Port:   expect.Port,
+				HeldBy: held.label,
+				Kind:   held.kind,
+				Source: expect.Source,
+			})
 		}
 
 		out = append(out, entry)

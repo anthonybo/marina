@@ -158,3 +158,29 @@ func TestSortPortsRanksEvidence(t *testing.T) {
 		}
 	}
 }
+
+// A start script that checks its dependencies are up names their ports, not its
+// own. Observed on a real project: the script opened with a pg_isready probe, 5432
+// was recorded as the project's own port, and the dashboard then warned that it
+// could not start because PostgreSQL was occupying PostgreSQL's port.
+func TestDependencyProbesAreNotTheProjectsPort(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "scripts/start.sh", `#!/usr/bin/env bash
+if ! pg_isready -h localhost -p 5432 -q; then
+  echo "Postgres is not accepting connections on :5432"
+  exit 1
+fi
+redis-cli -p 6379 ping >/dev/null
+node server.js --port 4310
+`)
+	got := portMap(t, dir, map[string]string{"dev": "bash scripts/start.sh"}, "")
+
+	for _, dep := range []int{5432, 6379} {
+		if p, ok := got[dep]; ok {
+			t.Errorf("%d was taken as the project's own port (from %q); it belongs to a dependency", dep, p.Detail)
+		}
+	}
+	if _, ok := got[4310]; !ok {
+		t.Errorf("the project's real port was missed; found %v", got)
+	}
+}
