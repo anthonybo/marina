@@ -8,7 +8,14 @@ import {
   type AppHealth,
   type HealthState,
 } from '../lib/useHealth'
-import { clusterServices, primaryName, secondaryName, uptime, type Cluster } from '../lib/format'
+import {
+  clusterServices,
+  isToolPort,
+  primaryName,
+  secondaryName,
+  uptime,
+  type Cluster,
+} from '../lib/format'
 import { RootsEditor } from './RootsEditor'
 
 /**
@@ -85,7 +92,10 @@ export function HarborView({
     const infra = services.filter((s) => s.kind === 'infra')
     // One boat per project front door. Its workers ride on its net rather than
     // crowding the water as if they were apps of their own.
-    const clusters = clusterServices(apps)
+    // A boat is a server somebody chose to run on a port somebody chose. A cluster
+    // whose front door is an OS-assigned port is a tool, not a project, and drawing
+    // it made the scene flicker: see isToolPort.
+    const clusters = clusterServices(apps).filter((c) => !isToolPort(c.primary.port))
     return {
       fishing: clusters.filter((c) => c.primary.probe.http),
       moored: clusters.filter((c) => !c.primary.probe.http),

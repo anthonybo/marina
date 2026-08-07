@@ -63,6 +63,31 @@ export function score(s: Service, query: string): number {
   return best
 }
 
+/**
+ * Where the OS starts handing out ephemeral ports. Must match dynamicPortFloor in
+ * the daemon, which uses the same line to decide that a listener above it is not a
+ * project's server.
+ */
+const DYNAMIC_PORT_FLOOR = 49152
+
+/**
+ * Whether a port was assigned by the OS rather than chosen by anyone.
+ *
+ * The harbour draws the servers you would open, and nobody opens a port the
+ * kernel picked at random. Cloudflare's workerd, running under a dev server here,
+ * respawns every few seconds and each incarnation binds two fresh ephemeral ports
+ * for about two seconds. During each cycle the project's only listeners are those
+ * ports; they carry no evidence of being a front door, so they were drawn as a
+ * pair of peer boats — and the whole "At the pier" section appeared and vanished
+ * with them, over and over.
+ *
+ * They are still real listeners and still appear in the manifest, in Everything,
+ * and in the counts there. They are just not boats.
+ */
+export function isToolPort(port: number): boolean {
+  return port >= DYNAMIC_PORT_FLOOR
+}
+
 /** A project's front door together with the services that only exist to serve it. */
 export interface Cluster {
   /**

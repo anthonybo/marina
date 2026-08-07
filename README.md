@@ -134,6 +134,15 @@ literal, and every element of the scene is a fact rather than a decoration:
 | Buoys | The machine's own port-holders — Control Centre, rapportd |
 | Sunk, heeled over, coral | Its memory is climbing — see [Boats that sink](#boats-that-sink) |
 
+The harbour draws servers, which means ports somebody chose. A listener on a port
+the OS assigned at random is a tool rather than a project — and drawing them made
+the scene twitch: a dev server here runs Cloudflare's workerd, which respawns every
+few seconds, and each incarnation binds two fresh ephemeral ports for about two
+seconds. During every cycle the project's only listeners were those ports, so a
+pair of boats and the whole "At the pier" section appeared and vanished, over and
+over. They are still real listeners and still appear in the manifest, in Everything
+and in the counts there; they are simply not boats.
+
 Amber is reserved: it only ever means "just started" or "pinned", so no fleet is
 ever assigned it. Boats are clickable exactly when they're out fishing, because
 that is the same question as "does this port serve HTTP". With
