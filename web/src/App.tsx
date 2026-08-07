@@ -21,15 +21,22 @@ import { useLogList } from './lib/useLogs'
 import { useHealth } from './lib/useHealth'
 import { useRoute } from './lib/useRoute'
 
-const VIEW_KEY = 'marina:view'
+// Versioned, so changing the default actually changes what you see. Every browser
+// that has ever loaded the dashboard has a stored preference from whichever tab it
+// last had open, and without this a new default would only reach someone who had
+// never used Marina before.
+const VIEW_KEY = 'marina:view:2'
 
 export default function App() {
   const { snapshot, connection, setPinned, setNickname, start, stop } = useMarina()
   const now = useClock()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('app')
+  // The harbour by default. The manifest is the denser, more complete list, but
+  // the harbour is the one you can read at a glance from across the room — and now
+  // that a leaking app visibly sinks, glancing is enough.
   const [view, setView] = useState<View>(
-    () => (localStorage.getItem(VIEW_KEY) as View | null) ?? 'manifest',
+    () => (localStorage.getItem(VIEW_KEY) as View | null) ?? 'harbor',
   )
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const searchRef = useRef<HTMLInputElement>(null)

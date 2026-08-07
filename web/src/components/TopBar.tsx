@@ -186,17 +186,9 @@ function ViewSwitch({
   onPane: (p: Pane) => void
   logCount: number
 }) {
+  // Harbour first, because it is the default and the one that gets used. The order
+  // here is also the tab order, so the main view should be the first thing reached.
   const options = [
-    {
-      id: 'manifest' as const,
-      label: 'Manifest',
-      hint: 'Dense list, grouped by project',
-      active: pane === 'dashboard' && view === 'manifest',
-      onClick: () => {
-        onPane('dashboard')
-        onView('manifest')
-      },
-    },
     {
       id: 'harbor' as const,
       label: 'Harbour',
@@ -205,6 +197,16 @@ function ViewSwitch({
       onClick: () => {
         onPane('dashboard')
         onView('harbor')
+      },
+    },
+    {
+      id: 'manifest' as const,
+      label: 'Manifest',
+      hint: 'Dense list, grouped by project',
+      active: pane === 'dashboard' && view === 'manifest',
+      onClick: () => {
+        onPane('dashboard')
+        onView('manifest')
       },
     },
     {

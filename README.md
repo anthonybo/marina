@@ -98,11 +98,8 @@ reveals pin, rename, and copy-address.
 The switch in the header picks how to read the same data. Your choice is
 remembered.
 
-**Manifest** is the working view: a dense list anchored on port numbers, grouped
-by project, built for scanning thirty rows and getting into one.
-
-**Harbour** is the same servers as a place. It is deliberately literal, and every
-element of the scene is a fact rather than a decoration:
+**Harbour** is the default: the same servers, drawn as a place. It is deliberately
+literal, and every element of the scene is a fact rather than a decoration:
 
 | In the harbour | Means |
 | --- | --- |
@@ -123,6 +120,9 @@ ever assigned it. Boats are clickable exactly when they're out fishing, because
 that is the same question as "does this port serve HTTP". With
 `prefers-reduced-motion` the harbour becomes a still illustration and loses
 nothing — no meaning is carried by movement alone.
+
+**Manifest** is the denser reading of the same data: a list anchored on port
+numbers, grouped by project, built for scanning thirty rows and getting into one.
 
 ## What it actually knows
 
