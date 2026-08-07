@@ -8,6 +8,15 @@
 #   bash scripts/install.sh --no-probe 3001-3013   # never send these ports HTTP
 #   bash scripts/install.sh --lan                  # let other devices view it
 #   bash scripts/install.sh --port80               # ...at http://marina.local, no port
+#   bash scripts/install.sh --no-lan               # back to this machine only
+#   bash scripts/install.sh --print-config         # show what a run would use, change nothing
+#
+# Options are remembered. "Idempotent" used to mean only that re-running was
+# safe, and a bare re-run silently rebuilt the launchd job without --lan or
+# --port80 — so an upgrade after a `git pull` quietly took marina.local off the
+# network while mDNS carried on advertising it. The name resolved and nothing
+# answered. Flags given explicitly always win, and every setting has a --no- form
+# so it can be turned back off.
 #
 # Uninstall with: bash scripts/uninstall.sh
 set -euo pipefail
@@ -25,6 +34,41 @@ NO_PROBE=""
 LAN=""
 PORT80=""
 TLS=""
+# The short Bonjour name the daemon publishes. Must match the daemon's own default
+# for -mdns-name, because the checks below use it to prove the name answers.
+MDNS_NAME="marina"
+SAVED_LAN=""
+SAVED_PORT80=""
+SAVED_TLS=""
+SAVED_PORT=""
+SAVED_NO_PROBE=""
+PRINT_ONLY=""
+CONF="$DEST/install.conf"
+REMEMBERED=""
+
+# What the last successful install chose. Parsed key by key rather than sourced:
+# this file is ours, but executing a config file to read it is a habit worth not
+# having. --roots is deliberately absent — see the note where it is applied.
+if [ -f "$CONF" ]; then
+  while IFS='=' read -r key value; do
+    case "$key" in
+      PORT)     [[ "$value" =~ ^[0-9]+$ ]] && PORT="$value" ;;
+      NO_PROBE) NO_PROBE="$value" ;;
+      LAN)      LAN="1" ;;
+      PORT80)   PORT80="1" ;;
+      TLS)      TLS="1" ;;
+    esac
+  done < "$CONF"
+  # What came from the file, kept separately from what the flags then do. Built
+  # from the resolved values, the summary claimed to be "keeping" settings that had
+  # in fact just been typed on the command line.
+  REMEMBERED="1"
+  SAVED_LAN="$LAN"
+  SAVED_PORT80="$PORT80"
+  SAVED_TLS="$TLS"
+  SAVED_PORT="$PORT"
+  SAVED_NO_PROBE="$NO_PROBE"
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,12 +88,49 @@ while [[ $# -gt 0 ]]; do
     # private CA every other device shows a full-page warning until it installs
     # that CA, which is worse than plain HTTP.
     --tls) TLS="1"; PORT80="1"; LAN="1"; shift ;;
+    # Each option needs a way off, or a remembered one could never be undone.
+    # Turning off the outer setting turns off everything that implies it: port 80
+    # is only reachable because of --lan, and TLS is only served on port 80.
+    --no-lan) LAN=""; PORT80=""; TLS=""; shift ;;
+    --no-port80) PORT80=""; TLS=""; shift ;;
+    --no-tls) TLS=""; shift ;;
+    # Resolve everything and print it, touching nothing. This is what the install
+    # test drives, so the remembering logic is checked without building Go, Swift
+    # and the dashboard first.
+    --print-config) PRINT_ONLY="1"; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
 ADDR="127.0.0.1:$PORT"
+
+# Only what the file supplied, so the summary never takes credit for a flag.
+kept=""
+if [ -n "$REMEMBERED" ]; then
+  if [ -n "$SAVED_LAN" ]; then kept="$kept --lan"; fi
+  if [ -n "$SAVED_PORT80" ]; then kept="$kept --port80"; fi
+  if [ -n "$SAVED_TLS" ]; then kept="$kept --tls"; fi
+  if [ -n "$SAVED_PORT" ] && [ "$SAVED_PORT" != "7777" ]; then kept="$kept --port $SAVED_PORT"; fi
+  if [ -n "$SAVED_NO_PROBE" ]; then kept="$kept --no-probe $SAVED_NO_PROBE"; fi
+fi
+
+if [ -n "$PRINT_ONLY" ]; then
+  echo "PORT=$PORT"
+  echo "LAN=${LAN:-0}"
+  echo "PORT80=${PORT80:-0}"
+  echo "TLS=${TLS:-0}"
+  echo "NO_PROBE=$NO_PROBE"
+  echo "ROOTS=$ROOTS"
+  echo "REMEMBERED=${REMEMBERED:-0}"
+  # What of the above came from the saved file rather than the command line.
+  echo "KEPT=$kept"
+  exit 0
+fi
+
 echo "==> Installing Marina $VERSION on $ADDR"
+if [ -n "$kept" ]; then
+  echo "  ✓ remembered from the last install:$kept"
+fi
 
 # 1) Prerequisites. Postgres is intentionally *not* required: the daemon runs
 #    without it and connects whenever it becomes available.
@@ -94,6 +175,10 @@ echo "  ✓ installed to $DEST"
 # --roots, so that a UI edit is not silently undone by the next upgrade. Passing
 # --roots explicitly is the deliberate override, and has to win — otherwise the
 # flag would appear to do nothing at all.
+#
+# For that reason --roots is the one option install.conf does not remember. A
+# remembered --roots would delete roots.json on every upgrade, which is precisely
+# the silent undoing this guards against.
 if [ -n "$ROOTS" ] && [ -f "$DEST/roots.json" ]; then
   rm -f "$DEST/roots.json"
   echo "  ! --roots given: cleared the directory list saved from the dashboard"
@@ -112,9 +197,9 @@ if [ -n "$TLS" ]; then
     mkdir -p "$DEST/tls"
     MDNS_HOST="$(scutil --get LocalHostName 2>/dev/null || echo "$(hostname -s)").local"
     if mkcert -cert-file "$DEST/tls/cert.pem" -key-file "$DEST/tls/key.pem" \
-         "${MDNS_NAME:-marina}.local" "$MDNS_HOST" localhost 127.0.0.1 ::1 >/dev/null 2>&1; then
+         "$MDNS_NAME.local" "$MDNS_HOST" localhost 127.0.0.1 ::1 >/dev/null 2>&1; then
       chmod 600 "$DEST/tls/key.pem"
-      echo "  ✓ certificate for ${MDNS_NAME:-marina}.local, $MDNS_HOST (trusted by this Mac)"
+      echo "  ✓ certificate for $MDNS_NAME.local, $MDNS_HOST (trusted by this Mac)"
       # Other devices reject that certificate until they trust the CA behind it, so
       # copy the CA's *public* half where the daemon can hand it out. The private
       # key stays where mkcert put it — with it, anyone could mint a trusted
@@ -122,7 +207,7 @@ if [ -n "$TLS" ]; then
       if CAROOT="$(mkcert -CAROOT 2>/dev/null)" && [ -f "$CAROOT/rootCA.pem" ]; then
         cp "$CAROOT/rootCA.pem" "$DEST/tls/ca.pem"
         chmod 644 "$DEST/tls/ca.pem"
-        echo "    other devices: http://${MDNS_NAME:-marina}.local/trust to stop the warning"
+        echo "    other devices: http://$MDNS_NAME.local/trust to stop the warning"
       fi
     else
       echo "  ! mkcert failed; the dashboard will be served over plain HTTP"
@@ -254,7 +339,7 @@ echo "  ✓ daemon registered with launchd (starts at login)"
 [ -n "$ROOTS" ] && echo "  ✓ scanning for projects in: $ROOTS"
 [ -n "$NO_PROBE" ] && echo "  ✓ HTTP probing disabled for ports: $NO_PROBE"
 [ -n "$LAN" ] && echo "  ✓ listening on the network too — other devices can view, not change"
-[ -n "$PORT80" ] && echo "  ✓ http://${MDNS_NAME:-marina}.local — no port needed"
+[ -n "$PORT80" ] && echo "  ✓ http://$MDNS_NAME.local — no port needed"
 [ -n "$TLS" ] && echo "  ! https enabled: other devices will warn unless the certificate is publicly trusted"
 
 write_plist "$MENU_LABEL" "$AGENTS/$MENU_LABEL.plist" \
@@ -273,6 +358,54 @@ for _ in $(seq 1 25); do
   sleep 0.4
 done
 echo
+
+# Remember what this run chose, so a bare re-run after a `git pull` upgrades in
+# place instead of quietly reverting the setup.
+{
+  echo "PORT=$PORT"
+  if [ -n "$NO_PROBE" ]; then echo "NO_PROBE=$NO_PROBE"; fi
+  if [ -n "$LAN" ]; then echo "LAN=1"; fi
+  if [ -n "$PORT80" ]; then echo "PORT80=1"; fi
+  if [ -n "$TLS" ]; then echo "TLS=1"; fi
+} > "$CONF"
+
+# 6) Prove the thing that was asked for actually happened.
+#
+# This exists because a silent revert is the failure mode that hurt: marina.local
+# stopped answering on the network while mDNS kept advertising it, and nothing
+# said so. An install that claims "http://marina.local — no port needed" has to
+# have checked.
+verify_failed=0
+if [ -n "$LAN" ]; then
+  # A LAN listener must be on the wildcard address. Bound to loopback it answers
+  # here and nowhere else, which looks fine from this machine and is broken from
+  # every other one.
+  if ! lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | grep -q '\*:'"$PORT"; then
+    echo "ERROR: --lan was requested but :$PORT is not listening on the network." >&2
+    verify_failed=1
+  fi
+fi
+if [ -n "$PORT80" ]; then
+  if ! curl -sf --max-time 5 "http://127.0.0.1/healthz" >/dev/null 2>&1; then
+    echo "ERROR: --port80 was requested but nothing answers on port 80." >&2
+    echo "       Something else may hold it: lsof -nP -iTCP:80 -sTCP:LISTEN" >&2
+    verify_failed=1
+  fi
+  # The name, not just the port. The mDNS proxy advertising a name that does not
+  # answer is worse than no name at all.
+  if ! curl -sf --max-time 5 "http://$MDNS_NAME.local/healthz" >/dev/null 2>&1; then
+    echo "ERROR: http://$MDNS_NAME.local/ does not answer, though port 80 does." >&2
+    echo "       The mDNS registration is the suspect: pgrep -fl dns-sd" >&2
+    verify_failed=1
+  fi
+fi
+if [ "$verify_failed" -ne 0 ]; then
+  echo "ERROR: install finished but the network setup it promised is not working." >&2
+  exit 1
+fi
+if [ -n "$PORT80" ]; then
+  echo "  ✓ verified: http://$MDNS_NAME.local/ answers"
+fi
 
 if curl -sf "http://$ADDR/healthz" >/dev/null 2>&1; then
   "$DEST/marina" status -addr "$ADDR" || true

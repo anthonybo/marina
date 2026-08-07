@@ -8,6 +8,12 @@ fail=0
 
 step() { printf '\n==> %s\n' "$1"; }
 
+# First, because it is the fastest and guards the thing with no other safety net:
+# install.sh is a shell script, so nothing else in this file can see a regression
+# in it, and the one it had took marina.local off the network on every device.
+step "install options"
+("$HERE/scripts/test-install.sh") || fail=1
+
 step "go vet"
 (cd "$HERE/daemon" && go vet ./...) || fail=1
 

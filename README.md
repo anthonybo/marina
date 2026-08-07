@@ -69,6 +69,25 @@ somewhere else can say:
 npm run setup -- --roots ~/projects,~/work
 ```
 
+### Upgrading, and why your settings survive it
+
+```bash
+git pull && bash scripts/install.sh
+```
+
+A bare re-run keeps whatever the last install chose — `--lan`, `--port80`,
+`--port`, `--no-probe` — and says so as it starts. It did not always: a re-run
+used to rebuild the launchd job from the defaults, so an upgrade silently took
+`marina.local` off the network while mDNS carried on advertising it. The name
+resolved and nothing answered, on every device except this one. Every option has a
+`--no-` form to turn it back off, `--print-config` shows what a run would use
+without changing anything, and the install now refuses to report success unless
+the address it promised actually answers.
+
+The one exception is `--roots`, which is never remembered. Directories added
+through the dashboard live in `roots.json`, and a remembered `--roots` would
+delete them on every upgrade.
+
 ### Moving it to another Mac
 
 There is no state to migrate and nothing machine-specific in the build. Clone,
@@ -772,10 +791,19 @@ static directory to lose and nothing to serve separately.
 ## Development
 
 ```bash
+bash scripts/setup-hooks.sh   # once per clone: pre-commit runs the checks
 npm run dev     # daemon on :7777 + Vite with hot reload on :5199
-npm run check   # go vet, go test, tsc, both production builds
+npm run check   # install options, go vet, go test, tsc, both production builds
 npm run build   # everything into ./dist
 ```
+
+Run `setup-hooks.sh` once and every commit runs `scripts/check.sh` first. It is
+the whole suite rather than a fast subset, deliberately: the regressions this repo
+has actually shipped were a shell script that reverted the network setup, a
+launchd plist that was only invalid at runtime, and a React key that remounted a
+component. None of them would have been caught by a quick check, and "I'll run the
+checks myself" is precisely what did not happen. Bypass a single commit with
+`git commit --no-verify`.
 
 `npm run dev` needs the installed daemon stopped first:
 
