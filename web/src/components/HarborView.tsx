@@ -154,10 +154,30 @@ export function HarborView({
         </div>
       </div>
 
-      {/* ── The pier, where boats that aren't serving yet stay tied up ───── */}
-      {moored.length > 0 && (
-        <section className="relative border-t-2 border-[#143c4f] bg-[#08222e] px-4 pb-5 pt-4">
-          <SectionLabel>At the pier · listening, not answering HTTP yet</SectionLabel>
+      {/* ── The pier, where boats that aren't serving yet stay tied up ─────
+          Always here, empty or not, and always the same height.
+
+          It used to mount only when something was moored, so a dev server
+          starting inserted a whole section and shoved every row below it down
+          the page — including the boatyard, which is where you read a project's
+          tooltip to find out which port it wants. A layout that moves while you
+          are reading it is worse than one that shows an empty pier, and a real
+          harbour has a pier whether or not anything is tied to it.
+
+          The height is reserved rather than merely reactive: one row of boats
+          fits in it, so the common case of one or two things compiling changes
+          what is drawn without changing where anything sits. */}
+      <section className="relative min-h-[10rem] border-t-2 border-[#143c4f] bg-[#08222e] px-4 pb-5 pt-4">
+        <SectionLabel>
+          {moored.length > 0
+            ? 'At the pier · listening, not answering HTTP yet'
+            : 'At the pier · nothing tied up'}
+        </SectionLabel>
+        {moored.length === 0 ? (
+          <p className="pt-3 font-mono text-[0.66rem] text-foam-400/70">
+            A server that is listening but still compiling waits here until it answers.
+          </p>
+        ) : (
           <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
             {moored.map((cluster) => (
               <Flotilla
@@ -171,9 +191,9 @@ export function HarborView({
               />
             ))}
           </div>
-          <Planks />
-        </section>
-      )}
+        )}
+        <Planks />
+      </section>
 
       {/* ── Boatyard: yours, hauled out, ready to put back in the water ────
           Shown even when empty: this is where the scanned-directory control lives,
