@@ -29,6 +29,14 @@ export function LogsView({ selected, onSelect, onStop }: LogsViewProps) {
     [unreachable],
   )
 
+  // The terminals Marina may clear away, by exactly the rule the per-card dismiss
+  // uses: finished, and Marina's own launch log. A file belonging to someone else's
+  // process is not ours to delete however many of them there are.
+  const finished = useMemo(
+    () => (logs ?? []).filter((log) => !log.running && log.source === 'launch'),
+    [logs],
+  )
+
   if (selected) {
     return (
       <SingleTerminal
@@ -54,6 +62,9 @@ export function LogsView({ selected, onSelect, onStop }: LogsViewProps) {
             <h2 className="stencil shrink-0 text-foam-300">Captured terminals</h2>
             <span className="h-px flex-1 bg-harbor-800" aria-hidden />
             <span className="tnum font-mono text-[0.7rem] text-foam-400">{logs.length}</span>
+            {/* Worth its own control past one: a list that is mostly finished
+                sessions takes as many clicks to clear as it has cards. */}
+            {finished.length > 1 && <DismissFinished logs={finished} />}
           </div>
 
           <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -217,6 +228,74 @@ function StopButton({
         {armed ? `stop ${name}?` : '⏻ stop'}
       </button>
       {error && <span className="ml-2 text-[0.68rem] text-coral-300">{error}</span>}
+    </>
+  )
+}
+
+/**
+ * Clears every finished terminal at once.
+ *
+ * Armed on the first click and explicit about the count on the second, because
+ * this deletes files. Marina has form here: an unlabelled × in the boatyard once
+ * read as "close this panel" and removed the only scanned directory instead. A
+ * control that destroys something says so in words and says how much.
+ */
+function DismissFinished({ logs }: { logs: LogEntry[] }) {
+  const [armed, setArmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!armed) return
+    const id = setTimeout(() => setArmed(false), 4000)
+    return () => clearTimeout(id)
+  }, [armed])
+
+  const count = logs.length
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        title={
+          armed
+            ? `Click again to delete ${count} log files`
+            : `Remove the ${count} finished terminals from this list, deleting their log files`
+        }
+        onClick={async () => {
+          if (!armed) {
+            setArmed(true)
+            return
+          }
+          setArmed(false)
+          setBusy(true)
+          // Sequential, not parallel: the daemon deletes files, and a failure
+          // partway through should leave a list you can read rather than a race.
+          // Report the first thing that went wrong and stop guessing after that.
+          let failed: string | null = null
+          for (const log of logs) {
+            const err = await dismissLog(log.name)
+            if (err) {
+              failed = `${log.name}: ${err}`
+              break
+            }
+          }
+          setError(failed)
+          setBusy(false)
+        }}
+        className={[
+          'rounded-md px-2 py-0.5 font-mono text-[0.66rem] transition-colors',
+          busy
+            ? 'cursor-default text-foam-400'
+            : armed
+              ? 'bg-coral-400/25 text-coral-300'
+              : 'text-foam-400 hover:bg-coral-400/15 hover:text-coral-300',
+        ].join(' ')}
+      >
+        {busy ? 'clearing…' : armed ? `delete ${count} log files?` : `dismiss ${count} finished`}
+      </button>
+      {error && <span className="font-mono text-[0.66rem] text-coral-300">{error}</span>}
     </>
   )
 }
