@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Runs the full check suite before every commit.
+#
+# Installed by scripts/setup-hooks.sh, which points core.hooksPath here so the
+# hook is version-controlled rather than living only in one clone of .git.
+#
+# Deliberately the whole suite and not a fast subset. The bugs this repo has
+# actually shipped were not caught by any single quick check: one lived in a shell
+# script, one in a launchd plist that only failed at runtime, one in a React key.
+# A commit is infrequent enough to afford a couple of minutes, and "I'll run the
+# checks myself" is exactly what did not happen.
+#
+# Skip a single commit with `git commit --no-verify` when you mean to.
+set -euo pipefail
+
+REPO="$(git rev-parse --show-toplevel)"
+
+if [ ! -x "$REPO/scripts/check.sh" ]; then
+  echo "pre-commit: scripts/check.sh is missing or not executable — skipping" >&2
+  exit 0
+fi
+
+printf 'pre-commit: running scripts/check.sh\n'
+if ! "$REPO/scripts/check.sh"; then
+  cat >&2 <<'EOF'
+
+pre-commit: refusing the commit because the checks failed.
+
+Fix them, or if you know what you are doing:
+  git commit --no-verify
+EOF
+  exit 1
+fi
