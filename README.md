@@ -116,6 +116,7 @@ element of the scene is a fact rather than a decoration:
 | On a cradle in the boatyard | A project that isn't running — click to launch it |
 | Buildings on the shore | Infra: Postgres, Redis, Mongo, Jaeger. One building per service, `+n` for its extra ports |
 | Buoys | The machine's own port-holders — Control Centre, rapportd |
+| Sunk, heeled over, coral | Its memory is climbing — see [Boats that sink](#boats-that-sink) |
 
 Amber is reserved: it only ever means "just started" or "pinned", so no fleet is
 ever assigned it. Boats are clickable exactly when they're out fishing, because
@@ -461,6 +462,43 @@ Webapp its 19 processes and leaves Marina with its own 1.
 for a dev server mid-rebuild; three cores pinned is what actually makes a laptop
 lag. Traces scale to each app's own peak, so a worker that varies between 6% and
 19% shows that variation instead of being flattened against a 400% axis.
+
+### Boats that sink
+
+Measuring was not enough. Marina recorded an app climbing 0.4 → 4.6GB over a couple
+of minutes, faithfully, in a sparkline nobody was looking at. The first anyone knew
+of it was a machine at load average 298 with 5.5GB of swap and a trackpad that had
+stopped responding. The numbers were right and said nothing.
+
+So an app whose memory is climbing has its **boat sink**: down in the water, heeled
+over, hull in coral, a wave breaking across its deck, and `+240M/min` where the
+uptime usually goes. In the manifest the same app gets a coral mooring bar and the
+same figure. Nothing else in the harbour is coral, so it reads from across the page
+without a banner and without reading a word.
+
+**It watches the shape, not the size.** A fixed memory threshold cannot tell a leak
+from a project that is legitimately large — one machine here runs thirteen worker
+processes that are supposed to be heavy and stay heavy, and alarming on those would
+train the alarm out of existence. What Marina looks for is memory that climbs and
+keeps climbing: a rise across the window, most of the sample-to-sample changes
+upward, and a rate past 100MB/min (6GB an hour). Big-but-steady is mentioned
+quietly and only past 3GB; falling memory is never an alarm.
+
+**The window is a minute, and the rate is a median.** Both were bought with a live
+leak. macOS reclaims pages in chunks, so a genuinely leaking process shows sudden
+40–50MB drops on its way up. Over thirty seconds one of those drops is most of the
+window's total rise, and a least-squares fit read the same steady 250MB/min leak as
+`+250MB/min` or `−107MB/min` depending on where the last drop happened to land —
+the boat surfaced and sank every few seconds. Comparing the median of the first
+third against the median of the last third cannot be moved by one dip, and a
+sixty-second window cannot be inverted by one either. An alarm that blinks is worse
+than no alarm; you learn to disbelieve it.
+
+**The pose is static, not animated.** A boat that *animated* its sinking would be a
+perpetual animation, and one of those costs about 15% of a CPU core here. An alarm
+about resource use has no business being the second-biggest consumer on the page,
+so depth and heel are computed once from severity and simply rendered. The only
+motion is the 700ms ease as it settles.
 
 ### Keeping it free
 

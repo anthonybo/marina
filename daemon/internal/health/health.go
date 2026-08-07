@@ -49,6 +49,15 @@ type Point struct {
 	RSS int64   `json:"rss"`
 }
 
+// Trend reads the shape of an app's recent memory use, so a leak can be named
+// while the machine is still usable. See trend.go for why shape rather than size.
+func (s *Sampler) Trend(key string) Trend {
+	s.mu.RLock()
+	history := append([]Point(nil), s.history[key]...)
+	s.mu.RUnlock()
+	return analyse(history, s.interval.Seconds())
+}
+
 // Machine describes the host, so an app's share can be put in context.
 type Machine struct {
 	Cores int `json:"cores"`

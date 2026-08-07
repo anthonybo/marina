@@ -1,7 +1,13 @@
 import { memo, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import type { Ashore, Service } from '../lib/types'
 import { LoadMeter } from './LoadMeter'
-import { loadLevel, type HealthState } from '../lib/useHealth'
+import {
+  distress,
+  distressLabel,
+  loadLevel,
+  type AppHealth,
+  type HealthState,
+} from '../lib/useHealth'
 import { clusterServices, primaryName, secondaryName, uptime, type Cluster } from '../lib/format'
 import { RootsEditor } from './RootsEditor'
 
@@ -41,6 +47,15 @@ function hash(value: string): number {
 }
 
 const fleetColor = (name: string) => FLEET[hash(name) % FLEET.length]
+
+/**
+ * Reserved for a boat in distress, and used nowhere else in the harbour.
+ *
+ * Amber already means "just started" and "pinned", and the fleet palette is
+ * deliberately cool, so a coral hull cannot be mistaken for a project that merely
+ * hashed to a warm colour.
+ */
+const DISTRESS = '#ff6b81'
 
 interface HarborViewProps {
   services: Service[]
@@ -368,8 +383,8 @@ interface BoatProps {
   onPin: (key: string, pinned: boolean) => void
   onStop?: (target: { port: number; withServices?: boolean }) => Promise<string | null> | void
   serviceCount?: number
-  /** This app's current cost, if measured yet. */
-  load?: { sample: { cpu: number; rss: number } }
+  /** This app's current cost, if measured yet, and where it is heading. */
+  load?: AppHealth
   cores?: number
   moored?: boolean
 }
@@ -393,7 +408,7 @@ const Boat = memo(function Boat({
     const id = setTimeout(() => setArmed(false), 4000)
     return () => clearTimeout(id)
   }, [armed])
-  const color = fleetColor(service.project || service.label)
+  const fleet = fleetColor(service.project || service.label)
   const delay = (hash(service.key) % 2600) / 1000
   const up = uptime(service.startedAt, now)
   const clickable = Boolean(service.url)
@@ -403,7 +418,17 @@ const Boat = memo(function Boat({
   // the meter below carries the actual number.
   const cpu = load?.sample.cpu ?? 0
   const level = loadLevel(cpu)
-  const sinkPx = Math.min(3, (cpu / 400) * 3)
+  const weightPx = Math.min(3, (cpu / 400) * 3)
+
+  // Trouble is drawn, not announced. Marina watched an app climb from 0.4 GB to
+  // 4.6 GB and said nothing louder than a slightly longer meter bar, and the first
+  // anyone knew of it was a frozen machine. A boat going under is impossible to
+  // read as normal, which is the entire point.
+  const trouble = distress(load?.trend)
+  const sinkPx = weightPx + trouble.sink
+  // A boat in trouble stops flying its own colours. Nothing else in the harbour is
+  // coral, so the change is legible from across the page without reading a word.
+  const color = trouble.foundering ? DISTRESS : fleet
 
   // The project name is the identity and must always appear. This used to prefer
   // `entry`, so the media backend rendered as "server.js" — a filename dozens of
@@ -429,7 +454,7 @@ const Boat = memo(function Boat({
         service.entry && service.entry !== qualifier ? ` · ${service.entry}` : ''
       } · port ${service.port}${up ? ` · up ${up}` : ''}${
         clickable ? '' : ' · not answering HTTP'
-      }`}
+      }${load?.trend?.why ? ` · ${load.trend.why}` : ''}`}
       className={[
         'group relative flex w-[7rem] shrink-0 flex-col items-center rounded-lg px-1 pt-1.5',
         'transition-transform duration-200',
@@ -437,8 +462,16 @@ const Boat = memo(function Boat({
       ].join(' ')}
     >
       <div
-        className={`relative ${moored ? '' : 'animate-bob'}`}
-        style={{ animationDelay: `-${delay}s`, transform: sinkPx ? `translateY(${sinkPx}px)` : undefined }}
+        className={`relative ${moored || trouble.foundering ? '' : 'animate-bob'}`}
+        style={{
+          animationDelay: `-${delay}s`,
+          transform:
+            sinkPx || trouble.list
+              ? `translateY(${sinkPx}px) rotate(${trouble.list}deg)`
+              : undefined,
+          transformOrigin: '50% 90%',
+          transition: 'transform 700ms ease-out',
+        }}
       >
         <svg viewBox="0 0 68 58" className="h-[3.1rem] w-[3.6rem] overflow-visible" aria-hidden>
           {service.meta.pinned && <path d="M34 5 L45 8.5 L34 12 Z" fill="#ffb454" />}
@@ -486,6 +519,27 @@ const Boat = memo(function Boat({
         )}
       </div>
 
+      {trouble.foundering && (
+        <svg
+          aria-hidden
+          viewBox="0 0 68 14"
+          className="pointer-events-none absolute left-1/2 top-[2.1rem] h-[0.8rem] w-[3.6rem] -translate-x-1/2"
+        >
+          <path
+            d="M2 8 Q11 2 20 8 T38 8 T56 8 T74 8 V14 H2 Z"
+            fill="#0d4a5f"
+            opacity="0.85"
+          />
+          <path
+            d="M2 8 Q11 2 20 8 T38 8 T56 8 T74 8"
+            stroke="#9fe8ff"
+            strokeWidth="1.1"
+            fill="none"
+            opacity="0.75"
+          />
+        </svg>
+      )}
+
       {service.fresh && (
         <span
           aria-hidden
@@ -502,8 +556,12 @@ const Boat = memo(function Boat({
       <span className="mt-1 w-full truncate text-center font-mono text-[0.62rem] leading-tight text-foam-100">
         {label}
       </span>
-      <span className="w-full truncate text-center font-mono text-[0.57rem] leading-tight text-foam-400">
-        {detail}
+      <span
+        className="w-full truncate text-center font-mono text-[0.57rem] leading-tight"
+        style={{ color: trouble.foundering ? DISTRESS : undefined }}
+        title={trouble.foundering ? load?.trend?.why : undefined}
+      >
+        {trouble.foundering && load?.trend ? distressLabel(load.trend) : detail}
       </span>
 
       {/* What this app is costing right now. Absent until the first two samples

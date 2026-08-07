@@ -216,6 +216,7 @@ export default function App() {
                 onRename={setNickname}
                 onStop={stop}
                 cpu={health.byKey.get(cluster.primary.key)?.sample.cpu}
+                trend={health.byKey.get(cluster.primary.key)?.trend}
                 cores={health.machine.cores}
               />
             ))}
@@ -257,6 +258,11 @@ export default function App() {
                   onToggle={toggleCluster}
                   onPin={setPinned}
                   onRename={setNickname}
+                  // Trouble only. This listing deliberately doesn't carry the CPU
+                  // meter — every row would grow a bar and the manifest is meant to
+                  // be scanned — but an app eating the machine has to be visible
+                  // from whichever tab you happen to have open.
+                  trend={health.byKey.get(cluster.primary.key)?.trend}
                 />
               ))}
             </Section>

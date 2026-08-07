@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import type { Service } from '../lib/types'
 import { primaryName, secondaryName, uptime } from '../lib/format'
 import { LoadMeter } from './LoadMeter'
+import { distress, distressLabel, type Trend } from '../lib/useHealth'
 
 /**
  * One berth in the harbour: a single listening service.
@@ -24,6 +25,9 @@ interface BerthProps {
   onStop?: (target: { port: number; withServices?: boolean }) => Promise<string | null> | void
   /** This app's current CPU cost, if measured. */
   cpu?: number
+  /** Where its memory is heading. A leak has to be visible in both views, or you
+   *  only see it if you happen to be on the harbour tab when it starts. */
+  trend?: Trend
   cores?: number
   /** True for a row rendered inside an expanded cluster — quieter, since its
    *  project and role are already established by what it sits under. */
@@ -66,6 +70,7 @@ export const Berth = memo(function Berth({
   onRename,
   onStop,
   cpu,
+  trend,
   cores = 1,
 }: BerthProps) {
   const [renaming, setRenaming] = useState(false)
@@ -75,13 +80,23 @@ export const Berth = memo(function Berth({
   // action is overkill, but an un-armed button next to "copy" invites misfires.
   const [armed, setArmed] = useState(false)
   const [stopError, setStopError] = useState<string | null>(null)
+
+  // The manifest's version of a boat going under. Same threshold as the harbour,
+  // read from the same number, so the two views can never disagree about whether
+  // an app is in trouble.
+  const foundering = distress(trend).foundering
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (renaming) inputRef.current?.select()
   }, [renaming])
 
-  const { bar, port } = tone(service)
+  const base = tone(service)
+  // Trouble outranks state: what a leaking app's mooring bar would otherwise say
+  // ("answering HTTP") is true and beside the point.
+  const { bar, port } = foundering
+    ? { bar: 'bg-coral-400', port: 'text-coral-300' }
+    : base
   const up = uptime(service.startedAt, now)
   const clickable = Boolean(service.url)
   const { primary, secondary } = lines(service, grouped)
@@ -269,10 +284,19 @@ export const Berth = memo(function Berth({
 
         {/* What it is costing. Only when measured and not idle, so a quiet row
             stays quiet. */}
-        {cpu !== undefined && cpu >= 1 && (
-          <div className="hidden w-16 shrink-0 md:block">
-            <LoadMeter cpu={cpu} cores={cores} showValue />
+        {foundering ? (
+          <div className="hidden w-16 shrink-0 text-right md:block">
+            <span className="tnum font-mono text-[0.66rem] text-coral-300" title={trend?.why}>
+              {trend && distressLabel(trend)}
+            </span>
           </div>
+        ) : (
+          cpu !== undefined &&
+          cpu >= 1 && (
+            <div className="hidden w-16 shrink-0 md:block">
+              <LoadMeter cpu={cpu} cores={cores} showValue />
+            </div>
+          )
         )}
 
         {/* Uptime. */}

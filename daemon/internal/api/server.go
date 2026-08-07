@@ -390,11 +390,14 @@ func (s *Server) handleNickname(w http.ResponseWriter, r *http.Request) {
 // looking at it.
 func (s *Server) handleAppHealth(w http.ResponseWriter, r *http.Request) {
 	type appHealth struct {
-		Key       string         `json:"key"`
-		Port      int            `json:"port"`
-		Project   string         `json:"project"`
-		Display   string         `json:"display"`
-		Sample    health.Sample  `json:"sample"`
+		Key     string        `json:"key"`
+		Port    int           `json:"port"`
+		Project string        `json:"project"`
+		Display string        `json:"display"`
+		Sample  health.Sample `json:"sample"`
+		// Trend says whether this app's memory is heading somewhere bad, which is
+		// the part a number alone never conveyed.
+		Trend     health.Trend   `json:"trend"`
 		History   []health.Point `json:"history,omitempty"`
 		Services  int            `json:"services"`
 		StartedAt int64          `json:"startedAt,omitempty"`
@@ -418,11 +421,14 @@ func (s *Server) handleAppHealth(w http.ResponseWriter, r *http.Request) {
 		groups := monitor.AppGroups(s.health, snap.Services, svc)
 
 		entry := appHealth{
-			Key:       svc.Key,
-			Port:      svc.Port,
-			Project:   svc.Project,
-			Display:   svc.Display,
-			Sample:    s.health.Groups(groups...),
+			Key:     svc.Key,
+			Port:    svc.Port,
+			Project: svc.Project,
+			Display: svc.Display,
+			Sample:  s.health.Groups(groups...),
+			// Read from the same history the sparkline draws, so what the boat shows
+			// and what the chart shows can never disagree.
+			Trend:     s.health.Trend(svc.Key),
 			Services:  count,
 			StartedAt: svc.StartedAt,
 		}

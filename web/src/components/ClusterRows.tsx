@@ -1,5 +1,6 @@
 import { Berth } from './Berth'
 import { portRange, type Cluster } from '../lib/format'
+import type { Trend } from '../lib/useHealth'
 
 /**
  * Renders a project's front door with its supporting services folded underneath.
@@ -20,6 +21,8 @@ interface ClusterRowsProps {
   onStop?: (target: { port: number; withServices?: boolean }) => Promise<string | null> | void
   /** The primary's current CPU cost, if measured. */
   cpu?: number
+  /** Where the primary's memory is heading, so a leak shows here too. */
+  trend?: Trend
   cores?: number
 }
 
@@ -33,6 +36,7 @@ export function ClusterRows({
   onRename,
   onStop,
   cpu,
+  trend,
   cores,
 }: ClusterRowsProps) {
   const { primary, services } = cluster
@@ -49,6 +53,7 @@ export function ClusterRows({
         onRename={onRename}
         onStop={onStop}
         cpu={cpu}
+        trend={trend}
         cores={cores}
       />
 

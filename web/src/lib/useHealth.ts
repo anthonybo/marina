@@ -21,6 +21,8 @@ export interface AppHealth {
   project: string
   display: string
   sample: HealthSample
+  /** Where its memory is heading — the part a single number never conveyed. */
+  trend?: Trend
   history?: HealthPoint[]
   services: number
   startedAt?: number
@@ -127,6 +129,58 @@ export function formatBytes(bytes: number): string {
  * makes a laptop lag.
  */
 export type LoadLevel = 'idle' | 'busy' | 'heavy' | 'hot'
+
+/** Where an app's memory is heading. Empty severity means nothing is wrong. */
+export interface Trend {
+  growthPerMin: number
+  climbing: boolean
+  /** 0 = fine, approaching 1 = about to take the machine with it. */
+  severity: number
+  why?: string
+}
+
+/**
+ * How a boat in trouble sits in the water.
+ *
+ * Deliberately a static pose rather than an animation. A sinking boat that
+ * *animates* would be a perpetual animation, and one of those costs ~15% of a CPU
+ * core here — an alarm about resource use has no business being the second-biggest
+ * consumer on the page. Depth and list are computed once from severity and simply
+ * rendered.
+ */
+/**
+ * The same fact as `trend.why`, short enough for a caption 7rem wide.
+ *
+ * "memory climbing 240 MB/min" rendered as "memory climbing 2…", which tells you
+ * a boat is in trouble and nothing about why. The full sentence stays on the
+ * tooltip; the caption carries the number, which is the part that decides whether
+ * you act now or after lunch.
+ */
+export function distressLabel(trend: Trend): string {
+  if (trend.climbing) return `+${formatBytes(trend.growthPerMin)}/min`
+  return trend.why ?? ''
+}
+
+export function distress(trend?: Trend) {
+  const s = Math.max(0, Math.min(1, trend?.severity ?? 0))
+  return {
+    /** How far below the waterline, in pixels. */
+    sink: s * 14,
+    /** How far over it has heeled, in degrees. Only once it is clearly in trouble. */
+    list: s < 0.4 ? 0 : (s - 0.4) * 18,
+    /**
+     * Whether it reads as foundering rather than merely heavy.
+     *
+     * `climbing` is taken at its word rather than re-derived from severity. The
+     * daemon has already cleared three gates to set it, and severity keeps moving
+     * underneath — a page reclaim landing at the end of the window drops a live
+     * 240 MB/min leak from 0.80 to 0.66. Comparing that against a bare threshold
+     * would put the boat back on the surface for one poll, which is the exact
+     * blinking the daemon-side window was widened to stop.
+     */
+    foundering: trend?.climbing === true || s >= 0.6,
+  }
+}
 
 export function loadLevel(cpu: number): LoadLevel {
   if (cpu < 25) return 'idle'
