@@ -125,7 +125,7 @@ export function HarborView({
             <div className="flex flex-wrap items-start justify-center gap-x-4 gap-y-6 px-4 pb-4 pt-5">
               {fishing.map((cluster) => (
                 <Flotilla
-                  key={cluster.primary.key}
+                  key={cluster.id}
                   cluster={cluster}
                   now={now}
                   onPin={onPin}
@@ -151,7 +151,7 @@ export function HarborView({
           <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
             {moored.map((cluster) => (
               <Flotilla
-                key={cluster.primary.key}
+                key={cluster.id}
                 cluster={cluster}
                 now={now}
                 onPin={onPin}

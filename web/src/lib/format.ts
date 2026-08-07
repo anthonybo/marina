@@ -65,6 +65,20 @@ export function score(s: Service, query: string): number {
 
 /** A project's front door together with the services that only exist to serve it. */
 export interface Cluster {
+  /**
+   * Stable identity for React, deliberately *not* the primary's key.
+   *
+   * Which port is a project's front door is a conclusion Marina revises as the
+   * project comes up. Measured on a real launch: an ephemeral worker port appears
+   * first and is the only listener, so it becomes the front door; the dev server
+   * binds eight seconds later and takes over. Keyed by the primary, that revision
+   * unmounted the boat and mounted a different one, which is why a boat appeared
+   * during startup, vanished, and then came back.
+   *
+   * Keyed by project, the same boat stays on the water and simply updates which
+   * port it is showing.
+   */
+  id: string
   primary: Service
   services: Service[]
 }
@@ -80,10 +94,21 @@ export interface Cluster {
 export function clusterServices(services: Service[]): Cluster[] {
   const clusters: Cluster[] = []
   const byPort = new Map<string, Cluster>()
+  // Clusters of the same project are numbered in order, so an identity built from
+  // the project name stays unique when a project has several unrelated front doors
+  // and stays stable across renders because the daemon's ordering is deterministic.
+  const seen = new Map<string, number>()
+  const identify = (s: Service): string => {
+    const project = s.project || s.label
+    if (!project) return s.key
+    const n = seen.get(project) ?? 0
+    seen.set(project, n + 1)
+    return `${project}#${n}`
+  }
 
   for (const s of services) {
     if (s.role === 'service') continue
-    const cluster: Cluster = { primary: s, services: [] }
+    const cluster: Cluster = { id: identify(s), primary: s, services: [] }
     clusters.push(cluster)
     byPort.set(`${s.project ?? ''}:${s.port}`, cluster)
   }
@@ -92,7 +117,7 @@ export function clusterServices(services: Service[]): Cluster[] {
     if (s.role !== 'service') continue
     const parent = byPort.get(`${s.project ?? ''}:${s.primaryPort ?? 0}`)
     if (parent) parent.services.push(s)
-    else clusters.push({ primary: s, services: [] })
+    else clusters.push({ id: identify(s), primary: s, services: [] })
   }
 
   for (const cluster of clusters) cluster.services.sort((a, b) => a.port - b.port)

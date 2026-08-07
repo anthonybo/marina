@@ -208,7 +208,7 @@ export default function App() {
           >
             {pinnedClusters.map((cluster) => (
               <ClusterRows
-                key={cluster.primary.key}
+                key={cluster.id}
                 cluster={cluster}
                 now={now}
                 grouped={false}
@@ -257,7 +257,7 @@ export default function App() {
             >
               {group.clusters.map((cluster) => (
                 <ClusterRows
-                  key={cluster.primary.key}
+                  key={cluster.id}
                   cluster={cluster}
                   now={now}
                   grouped
