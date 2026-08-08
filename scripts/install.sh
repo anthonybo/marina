@@ -236,30 +236,24 @@ case ":$PATH:" in
   *) echo "  ! add $BIN_DIR to your PATH to use the 'marina' command" ;;
 esac
 
-# The privileged sockets, if asked for. launchd binds these before starting the
-# job, so the daemon serves them without ever being privileged. Built here as a
-# string rather than inside the plist heredoc: that heredoc is quoted, so command
-# substitution inside it is emitted literally and produces invalid XML.
+# No Sockets entry, deliberately.
+#
+# Ports 80 and 443 used to be bound by launchd and handed to the daemon, because a
+# port below 1024 supposedly needs root and this daemon must not be root. macOS
+# does not actually reserve those ports: measured here, an ordinary process running
+# as uid 501 binds 81 and 88 with no privileges. The mechanism was solving a problem
+# that does not exist on this platform.
+#
+# It also had a failure mode that cost an evening. After the job restarted, launchd
+# handed back descriptors reporting 0.0.0.0:0 which died on their first accept, so
+# ports 80 and 443 were dead while `netstat` still showed them bound — nothing was
+# listening, yet nothing could take the port either, and mDNS kept advertising the
+# name. Neither a kickstart nor a full bootout/bootstrap recovered it.
+#
+# The daemon binds them itself now, so a failure happens in a process that can
+# report it. Declaring the sockets here as well would take the ports away from it
+# and break exactly what this is meant to fix.
 SOCKETS_XML=""
-if [ -n "$PORT80" ]; then
-  SOCKETS_XML="  <key>Sockets</key>
-  <dict>
-    <key>Listeners</key>
-    <dict>
-      <key>SockServiceName</key><string>80</string>
-      <key>SockType</key><string>stream</string>
-    </dict>"
-  if [ -n "$TLS" ]; then
-    SOCKETS_XML="$SOCKETS_XML
-    <key>TLS</key>
-    <dict>
-      <key>SockServiceName</key><string>443</string>
-      <key>SockType</key><string>stream</string>
-    </dict>"
-  fi
-  SOCKETS_XML="$SOCKETS_XML
-  </dict>"
-fi
 
 # 4) launchd jobs. Both RunAtLoad and KeepAlive so they survive a reboot and a
 #    crash. Unlike the cmux socket, nothing here needs a terminal session.
@@ -297,7 +291,7 @@ $(for arg in "$@"; do printf '    <string>%s</string>\n' "$arg"; done)
 $( [ -n "$ROOTS" ] && printf '    <key>MARINA_ROOTS</key><string>%s</string>\n' "$ROOTS" )
 $( [ -n "$NO_PROBE" ] && printf '    <key>MARINA_NO_PROBE</key><string>%s</string>\n' "$NO_PROBE" )
 $( [ -n "$TLS" ] && printf '    <key>MARINA_TLS</key><string>1</string>\n' )$( [ -n "$TLS_REDIRECT" ] && printf '    <key>MARINA_TLS_REDIRECT</key><string>1</string>\n' )
-$( [ -n "$LAN" ] && printf '    <key>MARINA_LAN</key><string>1</string>\n' )
+$( [ -n "$LAN" ] && printf '    <key>MARINA_LAN</key><string>1</string>\n' )$( [ -n "$PORT80" ] && printf '    <key>MARINA_PORT80</key><string>1</string>\n' )
     <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
 $SOCKETS_XML

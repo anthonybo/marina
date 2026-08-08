@@ -91,6 +91,7 @@ func runServe() int {
 		noProbe     = flag.String("no-probe", envOr("MARINA_NO_PROBE", ""), "ports never to contact over HTTP, e.g. \"3001-3013,9229\"")
 		mdnsName    = flag.String("mdns-name", envOr("MARINA_MDNS_NAME", "marina"), "short Bonjour name to publish for this machine, e.g. \"marina\" for marina.local; empty to publish nothing")
 		lan         = flag.Bool("lan", envOr("MARINA_LAN", "") != "", "also listen on this machine's network address, so other devices can load the dashboard; changes are still refused from anything but this machine")
+		servePort80 = flag.Bool("port80", envOr("MARINA_PORT80", "") != "", "also serve plain http on 80, so the name works with no port")
 		serveTLS    = flag.Bool("tls", envOr("MARINA_TLS", "") != "", "also serve https on 443, leaving port 80 serving plain http")
 		tlsRedirect = flag.Bool("tls-redirect", envOr("MARINA_TLS_REDIRECT", "") != "", "send port 80 to https instead of serving it; only with a publicly-trusted certificate, since a private CA makes every other device show a warning")
 		roots       = flag.String("roots", envOr("MARINA_ROOTS", defaultRoots()), "comma-separated directories to scan for projects you could start")
@@ -198,11 +199,22 @@ func runServe() int {
 		log.Warn("marina: could not load the certificate", "err", err)
 	}
 
-	// Ports below 1024 need root to bind, and this daemon launches your dev
-	// servers — it has no business being root, and neither do they. launchd binds
-	// the ports instead and hands over the descriptors, so bare marina.local works
-	// with nothing privileged running. Absent when started from a terminal or
-	// installed without them, which is not an error.
+	// Ports 80 and 443, bound directly.
+	//
+	// This used to go through launchd socket activation, on the belief that a port
+	// below 1024 needs root and this daemon — which launches your dev servers — has
+	// no business being root. The first half of that is not true on macOS: measured
+	// on this machine, an ordinary process running as uid 501 binds 81 and 88 with
+	// no privileges at all. The whole mechanism was solving a problem that does not
+	// exist here, at the cost of a cgo dependency and a failure mode that cost hours:
+	// after a restart, launchd handed back descriptors reporting 0.0.0.0:0 that died
+	// on the first accept with "invalid argument", so ports 80 and 443 were silently
+	// dead while netstat still showed them bound and the dashboard still advertised
+	// marina.local.
+	//
+	// Binding here instead means the listener either exists or fails loudly, in this
+	// process, where it can be reported. launchd adoption stays as a fallback for a
+	// system that does reserve low ports, so nothing regresses where it was needed.
 	//
 	// Port 80 serves the app in plain HTTP. It is tempting to redirect to HTTPS and
 	// it would be wrong here: no public certificate authority may issue for a
@@ -229,27 +241,16 @@ func runServe() int {
 	// redirect stays available for the case it was written for — a real domain whose
 	// certificate every client already trusts — behind its own flag.
 	var extra []api.Extra
-	kinds := map[string]api.Extra{"Listeners": {}}
-	if *serveTLS {
-		kinds["TLS"] = api.Extra{TLS: true}
-		if *tlsRedirect {
-			kinds["Listeners"] = api.Extra{RedirectToTLS: true}
+	if *servePort80 {
+		e := api.Extra{RedirectToTLS: *serveTLS && *tlsRedirect}
+		for _, l := range openPort(log, 80, "Listeners") {
+			e.Listener = l
+			extra = append(extra, e)
 		}
 	}
-	for name, kind := range kinds {
-		listeners, err := launchsock.Listeners(name)
-		switch {
-		case err == nil:
-			for _, l := range listeners {
-				e := kind
-				e.Listener = l
-				extra = append(extra, e)
-				log.Info("marina: adopted a socket from launchd", "socket", name, "addr", l.Addr().String())
-			}
-		case errors.Is(err, launchsock.ErrNotManaged), errors.Is(err, launchsock.ErrNoSocket):
-			// Nothing of that name. Normal.
-		default:
-			log.Warn("marina: could not adopt launchd sockets", "socket", name, "err", err)
+	if *serveTLS {
+		for _, l := range openPort(log, 443, "TLS") {
+			extra = append(extra, api.Extra{Listener: l, TLS: true})
 		}
 	}
 
@@ -737,6 +738,52 @@ func isLoopback(addr string) bool {
 		return true
 	}
 	return false
+}
+
+// openPort returns listeners for a low port, binding it directly and falling back
+// to the descriptor launchd bound under socketName.
+//
+// The order matters. Adoption used to come first, and when launchd handed back a
+// descriptor that was not a listening socket, the daemon accepted it, logged that
+// it was "also listening", and served nothing — the listener died on its first
+// accept and only a WARN in the log said so. Binding first means the common path
+// is one this process can verify.
+//
+// An adopted listener is checked before it is trusted: a real one reports the port
+// it is bound to, and the broken ones reported :0. That single test is what turns
+// this from a silent failure into a logged one.
+func openPort(log *slog.Logger, port int, socketName string) []net.Listener {
+	if ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port)); err == nil {
+		log.Info("marina: listening", "addr", ln.Addr().String())
+		return []net.Listener{ln}
+	} else {
+		log.Info("marina: could not bind directly, trying launchd", "port", port, "err", err)
+	}
+
+	adopted, err := launchsock.Listeners(socketName)
+	switch {
+	case err == nil:
+	case errors.Is(err, launchsock.ErrNotManaged), errors.Is(err, launchsock.ErrNoSocket):
+		log.Warn("marina: nothing is serving this port", "port", port)
+		return nil
+	default:
+		log.Warn("marina: could not adopt launchd sockets", "socket", socketName, "err", err)
+		return nil
+	}
+
+	out := make([]net.Listener, 0, len(adopted))
+	for _, l := range adopted {
+		if tcp, ok := l.Addr().(*net.TCPAddr); ok && tcp.Port == 0 {
+			log.Error("marina: launchd handed over a socket that is not listening",
+				"socket", socketName, "addr", l.Addr().String(),
+				"fix", "launchctl bootout gui/$(id -u)/tech.bocchino.marina && bash scripts/install.sh")
+			l.Close()
+			continue
+		}
+		log.Info("marina: adopted a socket from launchd", "socket", socketName, "addr", l.Addr().String())
+		out = append(out, l)
+	}
+	return out
 }
 
 func envOr(key, fallback string) string {
