@@ -106,6 +106,24 @@ remember "PORT=7777" "LAN=1" "PORT80=1"
 want "genuinely remembered settings are reported" "KEPT= --lan --port80"
 want "a flag that overrides is not reported as kept" "KEPT= --lan --port80" --no-port80
 
+# ── https must be additive, never a replacement for http ───────────────────
+# --tls used to turn port 80 into a redirect to https. On a .local name the
+# certificate is signed by a CA that exists on one machine, so that moved every
+# other device from "loads over http" to a full-page warning — the exact outcome
+# that made TLS opt-in in the first place. Redirecting is now its own flag.
+forget
+want "--tls serves https"                    "TLS=1" --tls
+want "--tls does not redirect port 80"       "TLS_REDIRECT=0" --tls
+want "--tls-redirect redirects"              "TLS_REDIRECT=1" --tls-redirect
+want "--tls-redirect implies --tls"          "TLS=1" --tls-redirect
+want "--no-tls drops the redirect too"       "TLS_REDIRECT=0" --tls-redirect --no-tls
+want "--no-tls-redirect keeps https"         "TLS=1" --tls-redirect --no-tls-redirect
+want "--no-tls-redirect stops redirecting"   "TLS_REDIRECT=0" --tls-redirect --no-tls-redirect
+
+remember "PORT=7777" "LAN=1" "PORT80=1" "TLS=1" "TLS_REDIRECT=1"
+want "a bare re-run keeps --tls-redirect" "TLS_REDIRECT=1"
+want "--no-lan gives up the redirect"     "TLS_REDIRECT=0" --no-lan
+
 # ── A corrupt file must not take the port with it ──────────────────────────
 remember "PORT=not-a-number" "LAN=1"
 want "a non-numeric remembered port falls back to the default" "PORT=7777"

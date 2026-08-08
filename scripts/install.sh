@@ -34,12 +34,14 @@ NO_PROBE=""
 LAN=""
 PORT80=""
 TLS=""
+TLS_REDIRECT=""
 # The short Bonjour name the daemon publishes. Must match the daemon's own default
 # for -mdns-name, because the checks below use it to prove the name answers.
 MDNS_NAME="marina"
 SAVED_LAN=""
 SAVED_PORT80=""
 SAVED_TLS=""
+SAVED_TLS_REDIRECT=""
 SAVED_PORT=""
 SAVED_NO_PROBE=""
 PRINT_ONLY=""
@@ -57,6 +59,7 @@ if [ -f "$CONF" ]; then
       LAN)      LAN="1" ;;
       PORT80)   PORT80="1" ;;
       TLS)      TLS="1" ;;
+      TLS_REDIRECT) TLS_REDIRECT="1" ;;
     esac
   done < "$CONF"
   # What came from the file, kept separately from what the flags then do. Built
@@ -66,6 +69,7 @@ if [ -f "$CONF" ]; then
   SAVED_LAN="$LAN"
   SAVED_PORT80="$PORT80"
   SAVED_TLS="$TLS"
+  SAVED_TLS_REDIRECT="$TLS_REDIRECT"
   SAVED_PORT="$PORT"
   SAVED_NO_PROBE="$NO_PROBE"
 fi
@@ -84,16 +88,23 @@ while [[ $# -gt 0 ]]; do
     # as you — nothing here needs root. Off by default because port 80 is a
     # popular port and taking it should be a decision.
     --port80) PORT80="1"; LAN="1"; shift ;;
-    # Only worth it with a publicly-trusted certificate for a real domain. With a
-    # private CA every other device shows a full-page warning until it installs
-    # that CA, which is worse than plain HTTP.
+    # Answer https on 443 as well, without taking port 80 away. On this Mac, which
+    # trusts the certificate mkcert signs, that is a real padlock; on a device that
+    # does not, http keeps working exactly as before. Worth having because a browser
+    # that upgrades to https on its own — Chrome does — otherwise reaches a closed
+    # port and stops at ERR_CONNECTION_REFUSED with no fallback.
     --tls) TLS="1"; PORT80="1"; LAN="1"; shift ;;
+    # Send port 80 to https instead of serving it. Only sane with a certificate
+    # every client already trusts, i.e. a real domain: with a private CA this turns
+    # every other device from "loads over http" into a full-page warning.
+    --tls-redirect) TLS_REDIRECT="1"; TLS="1"; PORT80="1"; LAN="1"; shift ;;
     # Each option needs a way off, or a remembered one could never be undone.
     # Turning off the outer setting turns off everything that implies it: port 80
     # is only reachable because of --lan, and TLS is only served on port 80.
-    --no-lan) LAN=""; PORT80=""; TLS=""; shift ;;
-    --no-port80) PORT80=""; TLS=""; shift ;;
-    --no-tls) TLS=""; shift ;;
+    --no-lan) LAN=""; PORT80=""; TLS=""; TLS_REDIRECT=""; shift ;;
+    --no-port80) PORT80=""; TLS=""; TLS_REDIRECT=""; shift ;;
+    --no-tls) TLS=""; TLS_REDIRECT=""; shift ;;
+    --no-tls-redirect) TLS_REDIRECT=""; shift ;;
     # Resolve everything and print it, touching nothing. This is what the install
     # test drives, so the remembering logic is checked without building Go, Swift
     # and the dashboard first.
@@ -110,6 +121,7 @@ if [ -n "$REMEMBERED" ]; then
   if [ -n "$SAVED_LAN" ]; then kept="$kept --lan"; fi
   if [ -n "$SAVED_PORT80" ]; then kept="$kept --port80"; fi
   if [ -n "$SAVED_TLS" ]; then kept="$kept --tls"; fi
+  if [ -n "$SAVED_TLS_REDIRECT" ]; then kept="$kept --tls-redirect"; fi
   if [ -n "$SAVED_PORT" ] && [ "$SAVED_PORT" != "7777" ]; then kept="$kept --port $SAVED_PORT"; fi
   if [ -n "$SAVED_NO_PROBE" ]; then kept="$kept --no-probe $SAVED_NO_PROBE"; fi
 fi
@@ -119,6 +131,7 @@ if [ -n "$PRINT_ONLY" ]; then
   echo "LAN=${LAN:-0}"
   echo "PORT80=${PORT80:-0}"
   echo "TLS=${TLS:-0}"
+  echo "TLS_REDIRECT=${TLS_REDIRECT:-0}"
   echo "NO_PROBE=$NO_PROBE"
   echo "ROOTS=$ROOTS"
   echo "REMEMBERED=${REMEMBERED:-0}"
@@ -283,7 +296,7 @@ $(for arg in "$@"; do printf '    <string>%s</string>\n' "$arg"; done)
     <key>MARINA_ADDR</key><string>$ADDR</string>
 $( [ -n "$ROOTS" ] && printf '    <key>MARINA_ROOTS</key><string>%s</string>\n' "$ROOTS" )
 $( [ -n "$NO_PROBE" ] && printf '    <key>MARINA_NO_PROBE</key><string>%s</string>\n' "$NO_PROBE" )
-$( [ -n "$TLS" ] && printf '    <key>MARINA_TLS</key><string>1</string>\n' )
+$( [ -n "$TLS" ] && printf '    <key>MARINA_TLS</key><string>1</string>\n' )$( [ -n "$TLS_REDIRECT" ] && printf '    <key>MARINA_TLS_REDIRECT</key><string>1</string>\n' )
 $( [ -n "$LAN" ] && printf '    <key>MARINA_LAN</key><string>1</string>\n' )
     <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
@@ -367,6 +380,7 @@ echo
   if [ -n "$LAN" ]; then echo "LAN=1"; fi
   if [ -n "$PORT80" ]; then echo "PORT80=1"; fi
   if [ -n "$TLS" ]; then echo "TLS=1"; fi
+  if [ -n "$TLS_REDIRECT" ]; then echo "TLS_REDIRECT=1"; fi
 } > "$CONF"
 
 # 6) Prove the thing that was asked for actually happened.
@@ -396,6 +410,23 @@ if [ -n "$PORT80" ]; then
   if ! curl -sf --max-time 5 "http://$MDNS_NAME.local/healthz" >/dev/null 2>&1; then
     echo "ERROR: http://$MDNS_NAME.local/ does not answer, though port 80 does." >&2
     echo "       The mDNS registration is the suspect: pgrep -fl dns-sd" >&2
+    verify_failed=1
+  fi
+fi
+if [ -n "$TLS" ]; then
+  # Both halves, because the whole point of --tls here is that it adds https
+  # without taking http away. A browser that upgrades on its own needs 443 to
+  # answer; every device that cannot trust this certificate needs 80 to keep
+  # working. Checking only one would let the regression that motivated this
+  # through unnoticed.
+  if ! curl -sf --max-time 5 "https://$MDNS_NAME.local/healthz" >/dev/null 2>&1; then
+    echo "ERROR: --tls was requested but https://$MDNS_NAME.local/ does not answer." >&2
+    echo "       Certificate: $DEST/cert.pem — is mkcert's root installed? (mkcert -install)" >&2
+    verify_failed=1
+  fi
+  if [ -z "$TLS_REDIRECT" ] &&
+     ! curl -sf --max-time 5 "http://$MDNS_NAME.local/healthz" >/dev/null 2>&1; then
+    echo "ERROR: enabling https took plain http away, which it must not do." >&2
     verify_failed=1
   fi
 fi

@@ -91,7 +91,8 @@ func runServe() int {
 		noProbe     = flag.String("no-probe", envOr("MARINA_NO_PROBE", ""), "ports never to contact over HTTP, e.g. \"3001-3013,9229\"")
 		mdnsName    = flag.String("mdns-name", envOr("MARINA_MDNS_NAME", "marina"), "short Bonjour name to publish for this machine, e.g. \"marina\" for marina.local; empty to publish nothing")
 		lan         = flag.Bool("lan", envOr("MARINA_LAN", "") != "", "also listen on this machine's network address, so other devices can load the dashboard; changes are still refused from anything but this machine")
-		serveTLS    = flag.Bool("tls", envOr("MARINA_TLS", "") != "", "serve https on 443 and redirect 80 to it; only worth enabling with a publicly-trusted certificate, since a private CA makes every other device show a warning")
+		serveTLS    = flag.Bool("tls", envOr("MARINA_TLS", "") != "", "also serve https on 443, leaving port 80 serving plain http")
+		tlsRedirect = flag.Bool("tls-redirect", envOr("MARINA_TLS_REDIRECT", "") != "", "send port 80 to https instead of serving it; only with a publicly-trusted certificate, since a private CA makes every other device show a warning")
 		roots       = flag.String("roots", envOr("MARINA_ROOTS", defaultRoots()), "comma-separated directories to scan for projects you could start")
 		verbose     = flag.Bool("v", false, "verbose logging")
 	)
@@ -212,15 +213,28 @@ func runServe() int {
 	// "Not secure" chip and no click-through. A private dashboard that opens is
 	// worth more than a padlock that blocks.
 	//
-	// The TLS listener is opt-in for the one case where it is genuinely warning-free:
-	// a real domain with a publicly-trusted certificate. Without that it stays off,
-	// so a browser trying HTTPS first fails fast and falls back rather than landing
-	// on a warning.
+	// So the TLS listener is opt-in. What it must not do is take plain HTTP away.
+	//
+	// It used to: -tls turned port 80 into a redirect, which moved every device that
+	// cannot trust the certificate from "loads" to "full-page warning" — the exact
+	// outcome that made this opt-in. The reasoning was that a browser trying HTTPS
+	// first would "fail fast and fall back", so leaving 443 closed was harmless.
+	// That is not what browsers do. Chrome upgraded a bare `marina.local` to https,
+	// found nothing on 443, and stopped at ERR_CONNECTION_REFUSED — no fallback, no
+	// dashboard, and no clue why.
+	//
+	// Serving 443 in addition to 80 leaves nobody worse off. A device that trusts
+	// the certificate gets a padlock; one that does not keeps using http exactly as
+	// before; and a browser that insists on https now finds something there. The
+	// redirect stays available for the case it was written for — a real domain whose
+	// certificate every client already trusts — behind its own flag.
 	var extra []api.Extra
 	kinds := map[string]api.Extra{"Listeners": {}}
 	if *serveTLS {
-		kinds["Listeners"] = api.Extra{RedirectToTLS: true}
 		kinds["TLS"] = api.Extra{TLS: true}
+		if *tlsRedirect {
+			kinds["Listeners"] = api.Extra{RedirectToTLS: true}
+		}
 	}
 	for name, kind := range kinds {
 		listeners, err := launchsock.Listeners(name)

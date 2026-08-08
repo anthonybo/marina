@@ -717,8 +717,29 @@ private CA costs an install on every phone and laptop before anything loads at a
 
 Marina had this the wrong way round briefly: HTTPS with an mkcert certificate, which
 looked right on the machine that minted it and blocked every other device. The
-listener for it is now opt-in (`--tls`) and off by default, so a browser that tries
-HTTPS first gets a refused connection and falls back, rather than a warning.
+listener for it is now opt-in and off by default.
+
+It was off by default *and* closed, on the reasoning that "a browser that tries
+HTTPS first gets a refused connection and falls back". Browsers do not reliably do
+that. Chrome upgraded a bare `marina.local` to HTTPS on its own, found nothing on
+443, and stopped at `ERR_CONNECTION_REFUSED` — no fallback, no dashboard, and
+nothing on screen to suggest that dropping the `s` would fix it.
+
+So `--tls` now **adds** HTTPS rather than replacing HTTP:
+
+```bash
+bash scripts/install.sh --tls
+```
+
+- `https://marina.local` gets a real padlock on any machine that trusts the mkcert
+  root — which is the machine that ran `mkcert -install`, i.e. this one.
+- `http://marina.local` keeps working, unchanged, for everything else. Port 80 is
+  **not** redirected.
+
+Nobody is worse off than with it disabled, which is what makes it safe to turn on.
+Redirecting 80 to 443 is still available as `--tls-redirect`, and is only sane with
+a certificate every client already trusts — see below. Turning it on with a private
+CA is what moves other devices from "loads" to "full-page warning".
 
 **If you want a real padlock**, the name has to change — a certificate is possible
 for a domain you own, not for `.local`.:
